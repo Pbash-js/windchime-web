@@ -1,11 +1,14 @@
 "use client";
 import { useEffect, useState } from "react";
+import { YouTubePlayer } from "./youtube-player";
 
 export function PortalContainer() {
   const [mounted, setMounted] = useState(false);
+  const [portalCreated, setPortalCreated] = useState(false);
 
   useEffect(() => {
     setMounted(true);
+    
     // Create portal container if it doesn't exist
     if (!document.getElementById('window-portal')) {
       const portal = document.createElement('div');
@@ -19,8 +22,12 @@ export function PortalContainer() {
       portal.style.zIndex = '1000';
       portal.style.overflow = 'visible';
       document.body.appendChild(portal);
+      setPortalCreated(true);
       console.log('Portal container created');
+    } else {
+      setPortalCreated(true);
     }
+
     return () => {
       const portal = document.getElementById('window-portal');
       if (portal && portal.parentNode) {
@@ -28,5 +35,11 @@ export function PortalContainer() {
       }
     };
   }, []);
-  return null;
+
+  return (
+    <>
+      {/* Render the YouTube player */}
+      <YouTubePlayer />
+    </>
+  );
 }

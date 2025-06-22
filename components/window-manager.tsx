@@ -9,9 +9,24 @@ import { TimerPanel } from "./timer-panel";
 import { CalendarWindow } from "./calendar-window";
 import { SettingsWindow } from "./settings-window";
 import { PlaylistWindow } from "./playlist-window";
-import { MediaControls } from "./media-controls";
-import { useWindows } from "@/hooks/use-windows";
-import { CheckSquare, FileText, Timer, Calendar, Settings, Music } from "lucide-react";
+import { CustomLinksWindow } from "./custom-links-window";
+import MediaControls from "./media-controls";
+import { useWindows, isWidgetWindow, WidgetWindowType } from "@/hooks/use-windows";
+import { CheckSquare, FileText, Timer, Calendar, Settings, Music, Link as LinkIcon, LayoutGrid } from "lucide-react";
+import { WidgetWindow } from "./widget-window";
+import { WidgetsPanel } from "./widgets-panel";
+
+// Track active widget windows to avoid duplicates
+const widgetWindows = new Map<string, { name: string; url: string }>();
+
+export function registerWidgetWindow(widgetId: string, name: string, url: string) {
+  widgetWindows.set(widgetId, { name, url });
+  return widgetId;
+}
+
+export function unregisterWidgetWindow(widgetId: string) {
+  widgetWindows.delete(widgetId);
+}
 
 // Define the WindowPortal component for rendering windows in a portal
 const WindowPortal = ({ children }: { children: React.ReactNode }) => {
@@ -75,29 +90,59 @@ const createWindowComponents = (windows: any): WindowComponents => {
   );
 
   // Create each window if it's open
-  if (windows.tasks?.isOpen) {
-    components.tasks = createWindow('tasks', 'Tasks', <CheckSquare className="h-4 w-4" />, <TaskPanel />);
-  }
+  Object.entries(windows).forEach(([key, windowState]) => {
+    const state = windowState as { isOpen: boolean };
+    
+    if (!state.isOpen) return;
 
-  if (windows.notes?.isOpen) {
-    components.notes = createWindow('notes', 'Notes', <FileText className="h-4 w-4" />, <NotesPanel />);
-  }
-
-  if (windows.timer?.isOpen) {
-    components.timer = createWindow('timer', 'Timer', <Timer className="h-4 w-4" />, <TimerPanel />);
-  }
-
-  if (windows.calendar?.isOpen) {
-    components.calendar = createWindow('calendar', 'Calendar', <Calendar className="h-4 w-4" />, <CalendarWindow />, 800, 600);
-  }
-
-  if (windows.settings?.isOpen) {
-    components.settings = createWindow('settings', 'Settings', <Settings className="h-4 w-4" />, <SettingsWindow />, 600, 500);
-  }
-
-  if (windows.playlist?.isOpen) {
-    components.playlist = createWindow('playlist', 'Playlist', <Music className="h-4 w-4" />, <PlaylistWindow />);
-  }
+    // Handle regular windows
+    switch (key) {
+      case 'tasks':
+        components.tasks = createWindow('tasks', 'Tasks', <CheckSquare className="h-4 w-4" />, <TaskPanel />);
+        break;
+      case 'notes':
+        components.notes = createWindow('notes', 'Notes', <FileText className="h-4 w-4" />, <NotesPanel />);
+        break;
+      case 'timer':
+        components.timer = createWindow('timer', 'Timer', <Timer className="h-4 w-4" />, <TimerPanel />);
+        break;
+      case 'calendar':
+        components.calendar = createWindow('calendar', 'Calendar', <Calendar className="h-4 w-4" />, <CalendarWindow />, 800, 600);
+        break;
+      case 'settings':
+        components.settings = createWindow('settings', 'Settings', <Settings className="h-4 w-4" />, <SettingsWindow />, 600, 500);
+        break;
+      case 'playlist':
+        components.playlist = createWindow('playlist', 'Playlist', <Music className="h-4 w-4" />, <PlaylistWindow />);
+        break;
+      case 'customLinks':
+        components.customLinks = createWindow('customLinks', 'Custom Links', <LinkIcon className="h-4 w-4" />, <CustomLinksWindow />, 450, 500);
+        break;
+      case 'widgets':
+        components.widgets = createWindow('widgets', 'Widgets', <LayoutGrid className="h-4 w-4" />, <WidgetsPanel />, 600, 700);
+        break;
+      default:
+        // Handle widget windows
+        if (isWidgetWindow(key)) {
+          const widgetInfo = widgetWindows.get(key);
+          if (widgetInfo) {
+            components[key] = createWindow(
+              key,
+              widgetInfo.name,
+              <LayoutGrid className="h-4 w-4" />,
+              <WidgetWindow 
+                widgetId={key} 
+                widgetName={widgetInfo.name} 
+                widgetUrl={widgetInfo.url} 
+              />,
+              800,
+              600
+            );
+          }
+        }
+        break;
+    }
+  });
 
   return components;
 };

@@ -4,12 +4,12 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Plus, Menu, Trash2, Check, Loader2, Cloud, CloudOff } from "lucide-react"
-import { useFirestoreTasks } from "@/hooks/use-firestore-tasks"
+import { useTasks } from "@/hooks/use-tasks"
 import { useAuth } from "@/contexts/auth-context"
 
 export function TaskPanel() {
   const { user } = useAuth()
-  const { tasks, loading, error, addTask, updateTask, deleteTask, isOnline } = useFirestoreTasks()
+  const { tasks, loading, error, addTask, updateTask, deleteTask, isOnline } = useTasks()
   const [newTask, setNewTask] = useState("")
   const [isAddingTask, setIsAddingTask] = useState(false)
   const [completingTasks, setCompletingTasks] = useState<Set<string>>(new Set())
@@ -18,8 +18,6 @@ export function TaskPanel() {
     if (newTask.trim()) {
       await addTask({
         title: newTask.trim(),
-        completed: false,
-        createdAt: new Date(),
         dueDate: new Date(Date.now() + 24 * 60 * 60 * 1000), // Tomorrow
       })
       setNewTask("")

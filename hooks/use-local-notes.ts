@@ -1,7 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useAuth } from "@/contexts/auth-context"
+import { useState, useEffect, useCallback } from "react"
 import { useToast } from "@/hooks/use-toast"
 
 export interface Note {
@@ -15,29 +14,17 @@ export interface Note {
   isPinned?: boolean
 }
 
+const NOTES_STORAGE_KEY = "windchime-local-notes"
+
 export function useLocalNotes() {
   const [notes, setNotes] = useState<Note[]>([])
   const [loading, setLoading] = useState(true)
-  const { user } = useAuth()
   const { toast } = useToast()
 
-  useEffect(() => {
-    if (!user) {
-      setNotes([])
-      setLoading(false)
-      return
-    }
-
-    loadNotes()
-  }, [user])
-
-  const loadNotes = () => {
-    if (!user) return
-
+  const loadNotes = useCallback(() => {
+    setLoading(true)
     try {
-      const notesKey = `notes-${user.uid}`
-      const stored = localStorage.getItem(notesKey)
-
+      const stored = localStorage.getItem(NOTES_STORAGE_KEY)
       if (stored) {
         const parsedNotes = JSON.parse(stored).map((note: any) => ({
           ...note,
@@ -45,39 +32,41 @@ export function useLocalNotes() {
           updatedAt: new Date(note.updatedAt),
         }))
         setNotes(parsedNotes.sort((a: Note, b: Note) => b.updatedAt.getTime() - a.updatedAt.getTime()))
+      } else {
+        setNotes([])
       }
     } catch (error) {
-      console.error("Error loading notes:", error)
+      console.error("Error loading notes from local storage:", error)
+      setNotes([])
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    loadNotes()
+  }, [loadNotes])
 
   const saveNotes = (newNotes: Note[]) => {
-    if (!user) return
-
     try {
-      const notesKey = `notes-${user.uid}`
-      localStorage.setItem(notesKey, JSON.stringify(newNotes))
+      localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(newNotes))
     } catch (error) {
-      console.error("Error saving notes:", error)
+      console.error("Error saving notes to local storage:", error)
+      toast({
+        title: "Error",
+        description: "Could not save notes.",
+        variant: "destructive",
+      })
     }
   }
 
-  const addNote = async (noteData: Omit<Note, "id" | "userId">) => {
-    if (!user) {
-      toast({
-        title: "Authentication required",
-        description: "Please sign in to add notes",
-        variant: "destructive",
-      })
-      return
-    }
-
+  const addNote = async (noteData: Omit<Note, "id" | "userId" | "createdAt" | "updatedAt">) => {
     const newNote: Note = {
       ...noteData,
       id: `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      userId: user.uid,
+      userId: 'local',
+      createdAt: new Date(),
+      updatedAt: new Date(),
     }
 
     const newNotes = [newNote, ...notes]
@@ -91,8 +80,6 @@ export function useLocalNotes() {
   }
 
   const updateNote = async (noteId: string, updates: Partial<Omit<Note, "id" | "userId">>) => {
-    if (!user) return
-
     const newNotes = notes.map((note) =>
       note.id === noteId
         ? {
@@ -102,14 +89,11 @@ export function useLocalNotes() {
           }
         : note,
     )
-
     setNotes(newNotes)
     saveNotes(newNotes)
   }
 
   const deleteNote = async (noteId: string) => {
-    if (!user) return
-
     const newNotes = notes.filter((note) => note.id !== noteId)
     setNotes(newNotes)
     saveNotes(newNotes)
@@ -119,10 +103,14 @@ export function useLocalNotes() {
       description: "Note has been removed",
     })
   }
-
-  const togglePin = async (noteId: string, isPinned: boolean) => {
-    await updateNote(noteId, { isPinned: !isPinned })
-  }
+  
+  const togglePin = async (noteId: string) => {
+    const newNotes = notes.map((note) =>
+      note.id === noteId ? { ...note, isPinned: !note.isPinned, updatedAt: new Date() } : note
+    );
+    setNotes(newNotes);
+    saveNotes(newNotes);
+  };
 
   return {
     notes,
@@ -132,6 +120,6 @@ export function useLocalNotes() {
     updateNote,
     deleteNote,
     togglePin,
-    isOnline: true,
+    isOnline: false,
   }
 }

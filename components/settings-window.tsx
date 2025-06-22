@@ -1,17 +1,18 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Settings, Palette, ImageIcon, Timer, Bell, Shield, Monitor, Sun, Moon, Cloud, CloudOff } from "lucide-react"
-import { useFirestorePreferences } from "@/hooks/use-firestore-preferences"
+import { Settings, Palette, ImageIcon, Timer, Bell, Shield, Monitor, Sun, Moon, Cloud, CloudOff, LayoutGrid } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useNetworkStatus } from "@/hooks/use-network-status"
 import { useTheme } from "next-themes"
+import { usePreferences } from "@/contexts/preferences-context"
+import type { UserPreferences } from "@/hooks/use-firestore-preferences"
 
 const backgroundImages = [
   { id: "bedroom", name: "Cozy Bedroom", path: "/images/bedroom-scene.png" },
@@ -21,22 +22,146 @@ const backgroundImages = [
 ]
 
 export function SettingsWindow() {
-  // Add default for background opacity if not present
-  const getInitialOpacity = () => {
-    if (preferences && typeof preferences.windowBgOpacity === 'number') return preferences.windowBgOpacity;
-    return 0.85; // default opacity
-  };
+  type LocalPreferences = UserPreferences & {
+    windowStyles: {
+      headerAutoHide: boolean
+      headerHideDelay: number
+      windowBgOpacity: number
+      windowBgColor: string
+      windowBorderRadius: number
+      windowShadow: string
+    }
+    musicGenre: string
+  }
 
-  const { preferences, loading, updatePreferences } = useFirestorePreferences()
+  const defaultWindowStyles = {
+    headerAutoHide: false,
+    headerHideDelay: 2000,
+    windowBgOpacity: 0.85,
+    windowBgColor: '24,24,28',
+    windowBorderRadius: 8,
+    windowShadow: '0 8px 30px rgba(0, 0, 0, 0.3)'
+  }
+
+  const { 
+    theme: currentTheme, 
+    backgroundScene, 
+    windowStyles, 
+    pomodoroSettings, 
+    notifications, 
+    privacy,
+    updateLocalPreferences 
+  } = usePreferences()
+  
   const { toast } = useToast()
   const { isOnline } = useNetworkStatus()
   const { setTheme } = useTheme()
-  const [localPrefs, setLocalPrefs] = useState({ ...preferences, windowBgOpacity: getInitialOpacity() })
+  
+  // Initialize local state with current preferences
+  const [localPrefs, setLocalPrefs] = useState<LocalPreferences>(() => {
+    // Create a base object with all required properties and default values
+    const basePrefs: LocalPreferences = {
+      theme: 'system',
+      backgroundScene: 'bedroom',
+      musicGenre: 'lofi',
+      windowStyles: {
+        ...defaultWindowStyles,
+        ...windowStyles
+      },
+      pomodoroSettings: {
+        workDuration: 25,
+        shortBreakDuration: 5,
+        longBreakDuration: 15,
+        sessionsUntilLongBreak: 4,
+        autoStartBreaks: true,
+        autoStartPomodoros: false,
+        soundEnabled: true,
+        volume: 70
+      },
+      notifications: {
+        desktop: true,
+        sound: true,
+        email: false
+      },
+      privacy: {
+        analytics: true,
+        crashReports: true
+      }
+    };
+
+    // Merge with current preferences from context
+    return {
+      ...basePrefs,
+      theme: currentTheme || basePrefs.theme,
+      backgroundScene: backgroundScene || basePrefs.backgroundScene,
+      windowStyles: {
+        ...basePrefs.windowStyles,
+        ...windowStyles
+      },
+      pomodoroSettings: {
+        ...basePrefs.pomodoroSettings,
+        ...pomodoroSettings
+      },
+      notifications: {
+        ...basePrefs.notifications,
+        ...notifications
+      },
+      privacy: {
+        ...basePrefs.privacy,
+        ...privacy
+      }
+    };
+  })
 
   // Update local preferences when global preferences change
   useEffect(() => {
-    setLocalPrefs(preferences)
-  }, [preferences])
+    setLocalPrefs(prev => {
+      // Only update if there are actual changes to prevent unnecessary re-renders
+      const newWindowStyles = {
+        ...defaultWindowStyles,
+        ...windowStyles,
+        // Preserve any local window style overrides that aren't in the context
+        ...(prev.windowStyles || {})
+      };
+      
+      const newPomodoroSettings = {
+        ...prev.pomodoroSettings,
+        ...pomodoroSettings
+      };
+      
+      const newNotifications = {
+        ...prev.notifications,
+        ...notifications
+      };
+      
+      const newPrivacy = {
+        ...prev.privacy,
+        ...privacy
+      };
+      
+      // Check if any values have actually changed
+      const hasChanges = 
+        (currentTheme && currentTheme !== prev.theme) ||
+        (backgroundScene && backgroundScene !== prev.backgroundScene) ||
+        JSON.stringify(newWindowStyles) !== JSON.stringify(prev.windowStyles) ||
+        JSON.stringify(newPomodoroSettings) !== JSON.stringify(prev.pomodoroSettings) ||
+        JSON.stringify(newNotifications) !== JSON.stringify(prev.notifications) ||
+        JSON.stringify(newPrivacy) !== JSON.stringify(prev.privacy);
+      
+      if (!hasChanges) return prev;
+      
+      return {
+        ...prev,
+        theme: currentTheme || prev.theme,
+        backgroundScene: backgroundScene || prev.backgroundScene,
+        musicGenre: prev.musicGenre,
+        windowStyles: newWindowStyles,
+        pomodoroSettings: newPomodoroSettings,
+        notifications: newNotifications,
+        privacy: newPrivacy
+      };
+    });
+  }, [currentTheme, backgroundScene, windowStyles, pomodoroSettings, notifications, privacy, defaultWindowStyles])
 
   // Apply theme changes immediately
   useEffect(() => {
@@ -45,76 +170,151 @@ export function SettingsWindow() {
     }
   }, [localPrefs.theme, setTheme])
 
+  // Apply window styles and background changes immediately
+  useEffect(() => {
+    const { windowStyles, backgroundScene } = localPrefs;
+
+    // Apply background image
+    const backgroundMap: Record<string, string> = {
+      bedroom: "/images/bedroom-scene.png",
+      library: "/images/library-scene.png",
+      nature: "/images/nature-scene.png",
+      office: "/images/office-scene.png",
+    };
+    const newBackground = backgroundMap[backgroundScene] || "/images/bedroom-scene.png";
+    document.body.style.backgroundImage = `url(${newBackground})`;
+
+    // Apply window styles as CSS variables
+    document.documentElement.style.setProperty('--window-bg-opacity', windowStyles.windowBgOpacity.toString());
+    document.documentElement.style.setProperty('--window-bg-color', windowStyles.windowBgColor);
+    document.documentElement.style.setProperty('--window-border-radius', `${windowStyles.windowBorderRadius}px`);
+    document.documentElement.style.setProperty('--window-shadow', windowStyles.windowShadow);
+
+  }, [localPrefs.windowStyles, localPrefs.backgroundScene]);
+
   const handlePomodoroChange = (key: string, value: any) => {
+    const newPomodoroSettings = {
+      ...localPrefs.pomodoroSettings,
+      [key]: value,
+    };
+    
     const newPrefs = {
       ...localPrefs,
-      pomodoroSettings: {
-        ...localPrefs.pomodoroSettings,
-        [key]: value,
-      },
-    }
-    setLocalPrefs(newPrefs)
-    // Auto-save for instant feedback
-    updatePreferences(newPrefs)
-  }
-
-  // For opacity slider
-  const handleOpacityChange = (value: number[]) => {
-    const newOpacity = value[0] / 100;
-    const newPrefs = { ...localPrefs, windowBgOpacity: newOpacity };
+      pomodoroSettings: newPomodoroSettings,
+    };
+    
     setLocalPrefs(newPrefs);
-    updatePreferences(newPrefs);
-    // Update CSS variable for immediate feedback
-    document.documentElement.style.setProperty('--window-bg-opacity', newOpacity.toString());
+    updateLocalPreferences({ pomodoroSettings: newPomodoroSettings });
   };
 
-  const handlePreferenceChange = async (key: string, value: any) => {
+  // Handle window style changes
+  const handleWindowStyleChange = (key: string, value: any) => {
+    const newWindowStyles = {
+      ...localPrefs.windowStyles,
+      [key]: value,
+    };
+    
+    const newPrefs = {
+      ...localPrefs,
+      windowStyles: newWindowStyles,
+    };
+    
+    setLocalPrefs(newPrefs);
+    updateLocalPreferences({ windowStyles: newWindowStyles });
+  };
+  
+  // Define valid window style keys for type safety
+  type WindowStyleKey = 'headerAutoHide' | 'headerHideDelay' | 'windowBgOpacity' | 'windowBgColor' | 'windowBorderRadius' | 'windowShadow';
+  
+  // Memoize the slider change handler to prevent unnecessary re-renders
+  const handleSliderChange = useCallback((key: WindowStyleKey, value: any, isSliderCommit = false) => {
+    setLocalPrefs(prev => {
+      // Skip update if the value hasn't changed
+      if (prev.windowStyles[key] === value) return prev;
+      
+      const newWindowStyles = {
+        ...prev.windowStyles,
+        [key]: value,
+      };
+      
+      // Only update preferences when the slider interaction is complete
+      if (isSliderCommit) {
+        updateLocalPreferences({ windowStyles: newWindowStyles });
+      }
+      
+      return {
+        ...prev,
+        windowStyles: newWindowStyles,
+      };
+    });
+  }, [updateLocalPreferences]);
+  
+  // Memoize the slider components to prevent unnecessary re-renders
+  const renderSlider = useCallback(({
+    id,
+    value,
+    min,
+    max,
+    step,
+    format = (v: number) => v.toString(),
+    onChange,
+    onCommit
+  }: {
+    id: string;
+    value: number;
+    min: number;
+    max: number;
+    step: number;
+    format?: (value: number) => string;
+    onChange: (value: number) => void;
+    onCommit: (value: number) => void;
+  }) => (
+    <Slider
+      id={id}
+      min={min}
+      max={max}
+      step={step}
+      value={[value]}
+      onValueChange={([val]) => onChange(val)}
+      onValueCommit={([val]) => onCommit(val)}
+      className="w-full"
+    />
+  ), []);
+
+  const handlePreferenceChange = (
+    key: keyof Omit<LocalPreferences, 'windowStyles'>,
+    value: LocalPreferences[keyof Omit<LocalPreferences, 'windowStyles'>]
+  ) => {
     const newPrefs = {
       ...localPrefs,
       [key]: value,
-    }
+    };
     
     // Update local state immediately for instant UI feedback
-    setLocalPrefs(newPrefs)
+    setLocalPrefs(newPrefs);
     
-    // For background changes, update the DOM directly for immediate visual feedback
-    if (key === 'backgroundScene') {
-      const backgroundMap: Record<string, string> = {
-        bedroom: "/images/bedroom-scene.png",
-        library: "/images/library-scene.png",
-        nature: "/images/nature-scene.png",
-        office: "/images/office-scene.png",
-      }
-      const newBackground = backgroundMap[value as keyof typeof backgroundMap] || "/images/bedroom-scene.png"
-      
-      // Update the background immediately
-      const bgElement = document.querySelector('.bg-update-element')
-      if (bgElement) {
-        bgElement.setAttribute('style', 
-          `background-image: url(${newBackground}); 
-           background-size: cover; 
-           background-position: center; 
-           background-repeat: no-repeat; 
-           transition: background-image 0.5s ease-in-out;`)
-      }
-    }
-    
-    // Always update preferences in the background
-    await updatePreferences(newPrefs)
-  }
+    // Update preferences in the background
+    updateLocalPreferences({ [key]: value });
+  };
 
-  const handleNestedPreferenceChange = (category: string, key: string, value: any) => {
+  const handleNestedPreferenceChange = <K extends keyof LocalPreferences>(
+    category: K,
+    key: keyof LocalPreferences[K],
+    value: LocalPreferences[K][keyof LocalPreferences[K]]
+  ) => {
+    const newCategory = {
+      ...(localPrefs[category] as object),
+      [key]: value,
+    };
+    
     const newPrefs = {
       ...localPrefs,
-      [category]: {
-        ...localPrefs[category],
-        [key]: value,
-      },
-    }
-    setLocalPrefs(newPrefs)
-    // Auto-save for instant feedback
-    updatePreferences(newPrefs)
-  }
+      [category]: newCategory,
+    };
+    
+    setLocalPrefs(newPrefs);
+    updateLocalPreferences({ [category]: newCategory });
+  };
 
   return (
     <div className="p-4 h-full text-white flex flex-col">
@@ -183,6 +383,76 @@ export function SettingsWindow() {
                     </Label>
                   </div>
                 </RadioGroup>
+              </CardContent>
+            </Card>
+
+            {/* Window Styling */}
+            <Card className="bg-gray-800/30 border-gray-700">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-white flex items-center gap-2 text-sm">
+                  <LayoutGrid className="h-4 w-4" />
+                  Window Styling
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-0">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="headerAutoHide" className="text-xs text-white">Auto-hide Header</Label>
+                    <Switch
+                      id="headerAutoHide"
+                      checked={localPrefs.windowStyles?.headerAutoHide || false}
+                      onCheckedChange={(checked) => handleNestedPreferenceChange('windowStyles', 'headerAutoHide', checked)}
+                    />
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="headerHideDelay" className="text-xs text-white">Header Hide Delay: {localPrefs.windowStyles?.headerHideDelay || 2000}ms</Label>
+                    </div>
+                    {renderSlider({
+                      id: 'headerHideDelay',
+                      value: localPrefs.windowStyles?.headerHideDelay || 2000,
+                      min: 500,
+                      max: 5000,
+                      step: 100,
+                      format: (v) => `${v}ms`,
+                      onChange: (value) => handleSliderChange('headerHideDelay', value, false),
+                      onCommit: (value) => handleSliderChange('headerHideDelay', value, true)
+                    })}
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="windowBgOpacity" className="text-xs text-white">Window Opacity: {Math.round((localPrefs.windowStyles?.windowBgOpacity || 0.85) * 100)}%</Label>
+                    </div>
+                    {renderSlider({
+                      id: 'windowBgOpacity',
+                      value: Math.round((localPrefs.windowStyles?.windowBgOpacity || 0.85) * 100),
+                      min: 10,
+                      max: 100,
+                      step: 5,
+                      format: (v) => `${v}%`,
+                      onChange: (value) => handleSliderChange('windowBgOpacity', value / 100, false),
+                      onCommit: (value) => handleSliderChange('windowBgOpacity', value / 100, true)
+                    })}
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="windowBorderRadius" className="text-xs text-white">Border Radius: {localPrefs.windowStyles?.windowBorderRadius || 8}px</Label>
+                    </div>
+                    {renderSlider({
+                      id: 'windowBorderRadius',
+                      value: localPrefs.windowStyles?.windowBorderRadius || 8,
+                      min: 0,
+                      max: 20,
+                      step: 1,
+                      format: (v) => `${v}px`,
+                      onChange: (value) => handleSliderChange('windowBorderRadius', value, false),
+                      onCommit: (value) => handleSliderChange('windowBorderRadius', value, true)
+                    })}
+                  </div>
+                </div>
               </CardContent>
             </Card>
 
@@ -329,27 +599,6 @@ export function SettingsWindow() {
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
-
-          <TabsContent value="general" className="p-4">
-            <div className="space-y-6">
-              {/* Background Transparency Slider */}
-              <div>
-                <Label htmlFor="bg-opacity-slider" className="mb-2 block">Menu Background Transparency</Label>
-                <div className="flex items-center gap-3">
-                  <Slider
-                    id="bg-opacity-slider"
-                    min={40}
-                    max={100}
-                    step={1}
-                    value={[Math.round((localPrefs.windowBgOpacity ?? 0.85) * 100)]}
-                    onValueChange={handleOpacityChange}
-                    className="w-48"
-                  />
-                  <span className="text-xs text-gray-400">{Math.round((localPrefs.windowBgOpacity ?? 0.85) * 100)}%</span>
-                </div>
-              </div>
-            </div>
           </TabsContent>
 
           <TabsContent value="privacy" className="space-y-4 mt-0">

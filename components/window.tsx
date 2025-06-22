@@ -2,12 +2,14 @@
 
 import type React from "react"
 
-import { useState, useRef, useEffect, useCallback } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useState, useEffect, useRef, useCallback, useMemo } from "react"
+import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { Minus, X, Maximize2, Minimize2, GripHorizontal, GripVertical, Grip } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Minus, X, Maximize2, Minimize2, Grip } from "lucide-react"
 import { useWindows, type WindowType } from "@/hooks/use-windows"
 import { useMobile } from "@/hooks/use-mobile"
+import { usePreferences } from "@/contexts/preferences-context"
 
 interface WindowProps {
   title: string
@@ -43,11 +45,76 @@ export function Window({
   const [isResizing, setIsResizing] = useState(false)
   const [resizeDirection, setResizeDirection] = useState<null | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw'>(null)
   const [isVisible, setIsVisible] = useState(false)
+  const [isHovered, setIsHovered] = useState(false)
+  const [isHeaderVisible, setIsHeaderVisible] = useState(true)
+  const [headerTimeout, setHeaderTimeout] = useState<NodeJS.Timeout | null>(null)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [initialPos, setInitialPos] = useState({ x: 0, y: 0 })
   const [initialSize, setInitialSize] = useState({ width: 0, height: 0 })
 
   const windowRef = useRef<HTMLDivElement>(null)
+
+  // Define the window styles type
+  type WindowStyles = {
+    headerAutoHide: boolean;
+    headerHideDelay: number;
+    windowBgOpacity: number;
+    windowBgColor: string;
+    windowBorderRadius: number;
+    windowShadow: string;
+  };
+
+  // Get window styles from preferences with proper typing
+  const { windowStyles } = usePreferences()
+  
+  // Define default window styles
+  const defaultWindowStyles: WindowStyles = {
+    headerAutoHide: false,
+    headerHideDelay: 2000,
+    windowBgOpacity: 0.85,
+    windowBgColor: '24,24,28',
+    windowBorderRadius: 8,
+    windowShadow: '0 8px 30px rgba(0, 0, 0, 0.3)'
+  }
+  
+  // Merge with default styles and ensure all properties are defined
+  const mergedStyles: WindowStyles = {
+    ...defaultWindowStyles,
+    ...(windowStyles || {})
+  } as WindowStyles
+  
+  // Apply window styles as CSS variables
+  useEffect(() => {
+    document.documentElement.style.setProperty('--window-bg-opacity', mergedStyles.windowBgOpacity.toString());
+    document.documentElement.style.setProperty('--window-bg-color', mergedStyles.windowBgColor);
+    document.documentElement.style.setProperty('--window-border-radius', `${mergedStyles.windowBorderRadius}px`);
+    document.documentElement.style.setProperty('--window-shadow', mergedStyles.windowShadow);
+  }, [mergedStyles])
+
+  // Handle header visibility based on hover and preferences
+  useEffect(() => {
+    // Clear any existing timeouts when dependencies change
+    const currentTimeout = headerTimeout;
+    
+    if (!mergedStyles.headerAutoHide) {
+      setIsHeaderVisible(true)
+      return
+    }
+    
+    if (isHovered) {
+      setIsHeaderVisible(true)
+      if (currentTimeout) clearTimeout(currentTimeout)
+    } else {
+      const timer = setTimeout(() => {
+        setIsHeaderVisible(false)
+      }, mergedStyles.headerHideDelay)
+      setHeaderTimeout(timer)
+    }
+    
+    return () => {
+      if (currentTimeout) clearTimeout(currentTimeout)
+    }
+  }, [isHovered, mergedStyles.headerAutoHide, mergedStyles.headerHideDelay])
 
   // Animate window appearance
   // Handle mounting and unmounting with animation
@@ -250,8 +317,22 @@ export function Window({
 
   // Calculate styles based on window state
   const getWindowStyles = () => {
+    // Update CSS variables for global use
+    document.documentElement.style.setProperty('--window-bg-opacity', mergedStyles.windowBgOpacity.toString());
+    document.documentElement.style.setProperty('--window-bg-color', mergedStyles.windowBgColor);
+    document.documentElement.style.setProperty('--window-border-radius', `${mergedStyles.windowBorderRadius}px`);
+    document.documentElement.style.setProperty('--window-shadow', mergedStyles.windowShadow);
+    
+    const baseStyles = {
+      '--window-bg-opacity': mergedStyles.windowBgOpacity,
+      '--window-bg-color': mergedStyles.windowBgColor,
+      '--window-border-radius': `${mergedStyles.windowBorderRadius}px`,
+      '--window-shadow': mergedStyles.windowShadow,
+    }
+
     if (isMobile) {
       return {
+        ...baseStyles,
         width: "100%",
         height: "100%",
         top: 0,
@@ -263,6 +344,7 @@ export function Window({
 
     if (windowState.isMaximized) {
       return {
+        ...baseStyles,
         width: "calc(100% - 40px)",
         height: "calc(100% - 140px)",
         top: "60px",
@@ -273,6 +355,7 @@ export function Window({
     }
 
     return {
+      ...baseStyles,
       width: `${windowState.position.width || defaultWidth}px`,
       height: `${Math.max(getMinHeight(), windowState.position.height || defaultHeight)}px`,
       top: `${windowState.position.y}px`,
@@ -282,52 +365,109 @@ export function Window({
     }
   }
 
-  const windowStyles = getWindowStyles()
+  const windowPositionStyles = getWindowStyles()
   
-  // Debug log window styles and state
+  // Memoize the computed styles to prevent unnecessary updates
+  const computedStyles = useMemo(() => ({
+    bgColor: windowStyles?.windowBgColor || '24,24,28',
+    bgOpacity: windowStyles?.windowBgOpacity || 0.85,
+    borderRadius: windowStyles?.windowBorderRadius || 8,
+    shadow: windowStyles?.windowShadow || '0 8px 30px rgba(0, 0, 0, 0.3)'
+  }), [
+    windowStyles?.windowBgColor,
+    windowStyles?.windowBgOpacity,
+    windowStyles?.windowBorderRadius,
+    windowStyles?.windowShadow
+  ]);
+  
+  // Apply window styles when they change
   useEffect(() => {
-    console.log(`Window [${type}] rendered with styles:`, {
-      ...windowStyles,
-      isVisible,
-      isDragging,
-      isMaximized: windowState.isMaximized
-    })
-  }, [windowStyles, isVisible, isDragging, windowState.isMaximized, type])
+    if (!windowRef.current) return;
+    const { bgColor, bgOpacity, borderRadius, shadow } = computedStyles;
+    const windowElement = windowRef.current;
+
+    // Only update styles if they've actually changed
+    const currentBg = windowElement.style.getPropertyValue('--window-bg-color');
+    if (currentBg !== bgColor) {
+      windowElement.style.setProperty('--window-bg-color', bgColor);
+
+      // Update card and header backgrounds
+      const card = windowElement.querySelector('.window-card');
+      const header = windowElement.querySelector('.window-header');
+
+      if (card instanceof HTMLElement) {
+        card.style.backgroundColor = `rgba(${bgColor}, ${bgOpacity})`;
+      }
+
+      if (header instanceof HTMLElement) {
+        header.style.backgroundColor = `rgba(${bgColor}, ${Math.min(bgOpacity + 0.1, 1)})`;
+      }
+    }
+
+    // Update other styles
+    windowElement.style.setProperty('--window-bg-opacity', bgOpacity.toString());
+    windowElement.style.setProperty('--window-border-radius', `${borderRadius}px`);
+    windowElement.style.setProperty('--window-shadow', shadow);
+  }, [computedStyles]);
 
   return (
     <div
       ref={windowRef}
-      className={`fixed shadow-2xl transition-all duration-300 ease-out ${
-        isVisible ? "opacity-100" : "opacity-0"
-      } ${isDragging ? "cursor-grabbing" : ""} ${
+      className={cn(
+        "fixed flex flex-col bg-transparent rounded-lg shadow-lg overflow-visible", // allow header to overflow
+        windowState.isMaximized ? "inset-0 m-0 rounded-none" : "",
+        isVisible ? "opacity-100" : "opacity-0 pointer-events-none",
+        isDragging ? "cursor-grabbing" : "",
         isResizing ? 'select-none' : ''
-      }`}
+      )}
       style={{
-        ...windowStyles,
-        pointerEvents: 'auto',
-        transform: windowStyles.transform || 'none',
-        zIndex: windowStyles.zIndex || 1000,
+        ...windowPositionStyles,
+        transform: (windowPositionStyles.transform || 'none') + (isDragging ? ' scale(1.02)' : ' scale(1)'),
+        zIndex: windowPositionStyles.zIndex || 1000,
         boxSizing: 'border-box',
         isolation: 'isolate',
         resize: 'none',
-        overflow: 'hidden',
+        overflow: 'visible', // allow header to overflow above
         minWidth: `${minWidth}px`,
         minHeight: `${getMinHeight()}px`,
+        borderRadius: `var(--window-border-radius, 8px)`,
+        boxShadow: `var(--window-shadow, 0 8px 30px rgba(0, 0, 0, 0.3))`,
+        pointerEvents: 'auto',
+        width: windowState.isMaximized ? '100%' : `${windowState.position.width || defaultWidth}px`,
+        height: windowState.isMaximized ? '100%' : `${Math.max(getMinHeight(), windowState.position.height || defaultHeight)}px`
       }}
+      onClick={handleWindowClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       data-window-type={type}
       data-visible={isVisible}
-      onClick={handleWindowClick}
     >
-      <Card className="w-full h-full flex flex-col"
+      {/* Header absolutely positioned above the window, outside its bounding box */}
+      <div
+        className="window-header absolute left-0 right-0 z-20"
         style={{
-          backgroundColor: `rgba(24,24,28, var(--window-bg-opacity, 0.85))`,
-          backdropFilter: 'blur(24px)',
+          bottom: '101%', // sits directly above the window panel
+          marginBottom: '0px',
+          pointerEvents: isHeaderVisible ? 'auto' : 'none',
+          borderRadius: computedStyles.borderRadius,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+          transform: isHeaderVisible ? 'translateY(0)' : 'translateY(8px)', // slight offset when hidden
+          opacity: isHeaderVisible ? 1 : 0,
+          transition: 'transform 200ms ease, opacity 200ms ease',
         }}
       >
         <CardHeader
-          className={`flex flex-row items-center justify-between space-y-0 py-3 px-4 border-b border-gray-700/50 transition-colors duration-200 ${
+          className={`flex flex-row items-center justify-between space-y-0 py-2 px-4 border-b border-gray-700/30 transition-colors duration-200 ${
             isDragging ? "bg-gray-800/50" : "hover:bg-gray-800/30"
           } ${isDragging ? "cursor-grabbing" : "cursor-move"}`}
+          style={{
+            backgroundColor: `rgba(${computedStyles.bgColor}, ${Math.min(computedStyles.bgOpacity + 0.1, 1)})`,
+            backdropFilter: 'blur(24px)',
+            position: 'relative',
+            zIndex: 10,
+            transition: 'background-color 300ms ease-in-out',
+            borderRadius: computedStyles.borderRadius,
+          }}
           onMouseDown={handleDragStart}
         >
           <div className="flex items-center gap-2">
@@ -338,7 +478,7 @@ export function Window({
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6 text-gray-400 hover:text-white hover:bg-gray-700/50 transition-all duration-200 hover:scale-110"
+              className="h-6 w-6 text-gray-300/80 hover:text-white hover:bg-gray-700/50 transition-all duration-200 hover:scale-110"
               onClick={() => closeWindow(type)}
             >
               <Minus className="h-3 w-3" />
@@ -346,7 +486,7 @@ export function Window({
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6 text-gray-400 hover:text-white hover:bg-gray-700/50 transition-all duration-200 hover:scale-110"
+              className="h-6 w-6 text-gray-300/80 hover:text-white hover:bg-gray-700/50 transition-all duration-200 hover:scale-110"
               onClick={() => toggleMaximize(type)}
             >
               {windowState.isMaximized ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
@@ -354,76 +494,65 @@ export function Window({
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6 text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200 hover:scale-110"
+              className="h-6 w-6 text-gray-300/80 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200 hover:scale-110"
               onClick={handleClose}
             >
               <X className="h-3 w-3" />
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="flex-1 p-0 overflow-hidden">{children}</CardContent>
-        
-        {/* Resize handles */}
-        {!windowState.isMaximized && !isMobile && (
-          <>
-            {/* Top */}
-            <div 
-              className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize"
-              onMouseDown={(e) => handleResizeStart(e, 'n')}
-            />
-            
-            {/* Top Right */}
-            <div 
-              className="absolute top-0 right-0 w-3 h-3 cursor-nesw-resize"
-              onMouseDown={(e) => handleResizeStart(e, 'ne')}
-            />
-            
-            {/* Right */}
-            <div 
-              className="absolute top-0 right-0 bottom-0 w-2 cursor-ew-resize"
-              onMouseDown={(e) => handleResizeStart(e, 'e')}
-            />
-            
-            {/* Bottom Right */}
-            <div 
-              className="absolute bottom-0 right-0 w-3 h-3 cursor-nwse-resize"
-              onMouseDown={(e) => handleResizeStart(e, 'se')}
-            />
-            
-            {/* Bottom */}
-            <div 
-              className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize"
-              onMouseDown={(e) => handleResizeStart(e, 's')}
-            />
-            
-            {/* Bottom Left */}
-            <div 
-              className="absolute bottom-0 left-0 w-3 h-3 cursor-nesw-resize"
-              onMouseDown={(e) => handleResizeStart(e, 'sw')}
-            />
-            
-            {/* Left */}
-            <div 
-              className="absolute top-0 left-0 bottom-0 w-2 cursor-ew-resize"
-              onMouseDown={(e) => handleResizeStart(e, 'w')}
-            />
-            
-            {/* Top Left */}
-            <div 
-              className="absolute top-0 left-0 w-3 h-3 cursor-nwse-resize"
-              onMouseDown={(e) => handleResizeStart(e, 'nw')}
-            />
-            
-            {/* Bottom right resize handle (larger area) */}
-            <div 
-              className="absolute bottom-1 right-1 w-4 h-4 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
-              onMouseDown={(e) => handleResizeStart(e, 'se')}
-            >
-              <Grip className="w-3 h-3 transform rotate-45" />
-            </div>
-          </>
-        )}
-      </Card>
+      </div>
+      {/* Main window panel: rounded, shadowed */}
+      <div
+        className="relative w-full h-full"
+        style={{
+          height: '100%',
+          minHeight: '100%',
+          overflow: 'hidden',
+          borderRadius: `${computedStyles.borderRadius}px`,
+          boxShadow: computedStyles.shadow,
+        }}
+      >
+        <Card
+          className="w-full h-full flex flex-col border-0"
+          style={{
+            backgroundColor: `rgba(${computedStyles.bgColor}, ${computedStyles.bgOpacity})`,
+            backdropFilter: 'blur(24px)',
+            borderRadius: `${computedStyles.borderRadius}px`,
+            border: 'none',
+            outline: 'none',
+            position: 'relative',
+            overflow: 'hidden',
+            height: '100%',
+            transition: 'background-color 300ms ease-in-out, border-radius 300ms ease-in-out',
+            paddingTop: 0 // no header space inside panel
+          }}
+        >
+          <CardContent
+            className="flex-1 p-0 overflow-hidden"
+            style={{
+              height: '100%',
+            }}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+          >
+            {children}
+          </CardContent>
+          {/* Resize handles */}
+          {!windowState.isMaximized && !isMobile && (
+            <>
+              {/* Bottom right resize handle */}
+              <div
+                className="absolute bottom-1 right-1 w-4 h-4 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
+                onMouseDown={(e) => handleResizeStart(e, 'se')}
+              >
+                <Grip className="w-3 h-3 transform rotate-45" />
+              </div>
+            </>
+          )}
+        </Card>
+      </div>
     </div>
-  )
+  );
 }
+

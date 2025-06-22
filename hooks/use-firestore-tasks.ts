@@ -44,8 +44,8 @@ export function useFirestoreTasks() {
       return
     }
 
-    const tasksRef = collection(db, "tasks")
-    const q = query(tasksRef, where("userId", "==", user.uid), orderBy("createdAt", "desc"))
+    const tasksRef = collection(db, "users", user.uid, "tasks")
+    const q = query(tasksRef, orderBy("createdAt", "desc"))
 
     const unsubscribe = onSnapshot(
       q,
@@ -63,7 +63,7 @@ export function useFirestoreTasks() {
               completed: data.completed,
               createdAt: data.createdAt?.toDate() || new Date(),
               dueDate: data.dueDate?.toDate() || new Date(),
-              userId: data.userId,
+              userId: user.uid, // We still need this for the Task interface
               updatedAt: data.updatedAt?.toDate() || new Date(),
             })
           })
@@ -105,7 +105,7 @@ export function useFirestoreTasks() {
     return () => unsubscribe()
   }, [user, toast, isOnline])
 
-  const addTask = async (taskData: Omit<Task, "id" | "userId" | "updatedAt">) => {
+  const addTask = async (taskData: Omit<Task, "id" | "userId" | "createdAt" | "updatedAt" | "completed">) => {
     if (!user) {
       toast({
         title: "Authentication required",
@@ -116,12 +116,11 @@ export function useFirestoreTasks() {
     }
 
     try {
-      const tasksRef = collection(db, "tasks")
+      const tasksRef = collection(db, "users", user.uid, "tasks")
       await addDoc(tasksRef, {
         ...taskData,
-        userId: user.uid,
-        createdAt: Timestamp.fromDate(taskData.createdAt),
-        dueDate: Timestamp.fromDate(taskData.dueDate),
+        completed: false,
+        createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       })
 
@@ -147,11 +146,11 @@ export function useFirestoreTasks() {
     }
   }
 
-  const updateTask = async (taskId: string, updates: Partial<Omit<Task, "id" | "userId">>) => {
+  const updateTask = async (taskId: string, updates: Partial<Omit<Task, "id">>) => {
     if (!user) return
 
     try {
-      const taskRef = doc(db, "tasks", taskId)
+      const taskRef = doc(db, "users", user.uid, "tasks", taskId)
       const updateData: any = {
         ...updates,
         updatedAt: serverTimestamp(),
@@ -201,7 +200,7 @@ export function useFirestoreTasks() {
     if (!user) return
 
     try {
-      const taskRef = doc(db, "tasks", taskId)
+      const taskRef = doc(db, "users", user.uid, "tasks", taskId)
       await deleteDoc(taskRef)
 
       toast({

@@ -1,7 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useAuth } from "@/contexts/auth-context"
+import { useState, useEffect, useCallback } from "react"
 import { useToast } from "@/hooks/use-toast"
 
 export interface Task {
@@ -14,29 +13,17 @@ export interface Task {
   updatedAt: Date
 }
 
+const TASKS_STORAGE_KEY = "windchime-local-tasks"
+
 export function useLocalTasks() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
-  const { user } = useAuth()
   const { toast } = useToast()
 
-  useEffect(() => {
-    if (!user) {
-      setTasks([])
-      setLoading(false)
-      return
-    }
-
-    loadTasks()
-  }, [user])
-
-  const loadTasks = () => {
-    if (!user) return
-
+  const loadTasks = useCallback(() => {
+    setLoading(true)
     try {
-      const tasksKey = `tasks-${user.uid}`
-      const stored = localStorage.getItem(tasksKey)
-
+      const stored = localStorage.getItem(TASKS_STORAGE_KEY)
       if (stored) {
         const parsedTasks = JSON.parse(stored).map((task: any) => ({
           ...task,
@@ -45,39 +32,41 @@ export function useLocalTasks() {
           updatedAt: new Date(task.updatedAt),
         }))
         setTasks(parsedTasks.sort((a: Task, b: Task) => b.createdAt.getTime() - a.createdAt.getTime()))
+      } else {
+        setTasks([])
       }
     } catch (error) {
-      console.error("Error loading tasks:", error)
+      console.error("Error loading tasks from local storage:", error)
+      setTasks([])
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    loadTasks()
+  }, [loadTasks])
 
   const saveTasks = (newTasks: Task[]) => {
-    if (!user) return
-
     try {
-      const tasksKey = `tasks-${user.uid}`
-      localStorage.setItem(tasksKey, JSON.stringify(newTasks))
+      localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(newTasks))
     } catch (error) {
-      console.error("Error saving tasks:", error)
+      console.error("Error saving tasks to local storage:", error)
+      toast({
+        title: "Error",
+        description: "Could not save tasks.",
+        variant: "destructive",
+      })
     }
   }
 
-  const addTask = async (taskData: Omit<Task, "id" | "userId" | "updatedAt">) => {
-    if (!user) {
-      toast({
-        title: "Authentication required",
-        description: "Please sign in to add tasks",
-        variant: "destructive",
-      })
-      return
-    }
-
+  const addTask = async (taskData: Omit<Task, "id" | "userId" | "updatedAt" | "createdAt" | "completed"> & {dueDate: Date, title: string}) => {
     const newTask: Task = {
       ...taskData,
       id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      userId: user.uid,
+      userId: 'local',
+      completed: false,
+      createdAt: new Date(),
       updatedAt: new Date(),
     }
 
@@ -92,8 +81,6 @@ export function useLocalTasks() {
   }
 
   const updateTask = async (taskId: string, updates: Partial<Omit<Task, "id" | "userId">>) => {
-    if (!user) return
-
     const newTasks = tasks.map((task) =>
       task.id === taskId
         ? {
@@ -116,8 +103,6 @@ export function useLocalTasks() {
   }
 
   const deleteTask = async (taskId: string) => {
-    if (!user) return
-
     const newTasks = tasks.filter((task) => task.id !== taskId)
     setTasks(newTasks)
     saveTasks(newTasks)
@@ -135,6 +120,6 @@ export function useLocalTasks() {
     addTask,
     updateTask,
     deleteTask,
-    isOnline: true,
+    isOnline: false,
   }
 }

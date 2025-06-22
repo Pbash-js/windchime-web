@@ -5,6 +5,7 @@ import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { AuthProvider } from "@/contexts/auth-context"
 import { LoadingProvider } from "@/contexts/loading-context"
+import { PreferencesProvider } from "@/contexts/preferences-context"
 import { Toaster } from "@/components/ui/toaster"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { useEffect, useState } from "react"
@@ -14,7 +15,7 @@ const inter = Inter({ subsets: ["latin"] })
 import { PortalContainer } from "@/components/PortalContainer";
 
 export const metadata: Metadata = {
-  title: "Lofizen - Focus & Productivity",
+  title: "Windchime - Focus & Productivity",
   description: "A beautiful productivity app with ambient sounds, pomodoro timer, tasks, and notes",
     generator: 'v0.dev'
 }
@@ -30,11 +31,13 @@ export default function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
           <LoadingProvider>
             <AuthProvider>
-              <TooltipProvider>
-                {children}
-                <PortalContainer />
-                <Toaster />
-              </TooltipProvider>
+              <PreferencesProvider>
+                <TooltipProvider>
+                  {children}
+                  <PortalContainer />
+                  <Toaster />
+                </TooltipProvider>
+              </PreferencesProvider>
             </AuthProvider>
           </LoadingProvider>
         </ThemeProvider>

@@ -7,12 +7,12 @@ import { Textarea } from "@/components/ui/textarea"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { Plus, FileText, Trash2, Loader2, Cloud, CloudOff, Pin, PinOff } from "lucide-react"
-import { useFirestoreNotes } from "@/hooks/use-firestore-notes"
+import { useNotes } from "@/hooks/use-notes"
 import { useAuth } from "@/contexts/auth-context"
 
 export function NotesPanel() {
   const { user } = useAuth()
-  const { notes, loading, error, addNote, updateNote, deleteNote, togglePin, isOnline } = useFirestoreNotes()
+  const { notes, loading, error, addNote, updateNote, deleteNote, togglePin, isOnline } = useNotes()
   const [isCreating, setIsCreating] = useState(false)
   const [newNoteTitle, setNewNoteTitle] = useState("")
   const [newNoteContent, setNewNoteContent] = useState("")

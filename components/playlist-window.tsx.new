@@ -1,0 +1,432 @@
+"use client"
+
+import { useState, useCallback, useEffect } from "react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { toast } from "@/hooks/use-toast"
+import { Play, Pause, Music, Search, Heart, Clock, Plus, ListMusic, Youtube } from "lucide-react"
+import { useYouTubePlayer } from "@/hooks/use-youtube-player"
+
+interface Track {
+  id: string
+  title: string
+  artist: string
+  startTime: number
+  endTime: number
+}
+
+interface YouTubePlaylist {
+  id: string
+  title: string
+  description: string
+  tracks: Track[]
+}
+
+export function PlaylistWindow() {
+  // Local state
+  const [searchQuery, setSearchQuery] = useState("")
+  const [activeTab, setActiveTab] = useState("current")
+  const [isAddingPlaylist, setIsAddingPlaylist] = useState(false)
+  const [youtubeUrl, setYoutubeUrl] = useState("")
+  const [playlistTitle, setPlaylistTitle] = useState("")
+  const [playlistDescription, setPlaylistDescription] = useState("")
+  const [playlists, setPlaylists] = useState<YouTubePlaylist[]>([])
+  const [favorites, setFavorites] = useState<Record<string, boolean>>({})
+  
+  // YouTube player hook
+  const { 
+    tracks, 
+    currentTrackIndex, 
+    isPlaying, 
+    seekToTrack, 
+    togglePlay, 
+    isPlayerReady,
+    setTracks
+  } = useYouTubePlayer()
+
+  // Filter tracks based on search query
+  const filteredTracks = searchQuery
+    ? tracks.filter(
+        (track) =>
+          track.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          track.artist.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : tracks
+
+  // Format duration in MM:SS format
+  const formatDuration = (startTime: number, endTime: number) => {
+    const duration = endTime - startTime
+    const minutes = Math.floor(duration / 60)
+    const seconds = Math.floor(duration % 60)
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`
+  }
+
+  // Check if a track is favorited
+  const isTrackFavorited = useCallback(
+    (trackId: string) => favorites[trackId] || false,
+    [favorites]
+  )
+
+  // Handle track click - play the selected track
+  const handleTrackClick = useCallback(
+    async (trackIndex: number) => {
+      try {
+        const track = filteredTracks[trackIndex]
+        const actualIndex = tracks.findIndex((t) => t.id === track.id)
+        
+        if (actualIndex === -1) return
+        
+        // If clicking the currently playing track, toggle play/pause
+        if (actualIndex === currentTrackIndex) {
+          await togglePlay()
+        } else {
+          // Otherwise, seek to the new track
+          await seekToTrack(actualIndex)
+          // If player was paused, start playing
+          if (!isPlaying) {
+            await togglePlay()
+          }
+        }
+      } catch (error) {
+        console.error('Error handling track click:', error)
+        toast({
+          title: 'Playback Error',
+          description: 'Failed to play the selected track.',
+          variant: 'destructive',
+        })
+      }
+    },
+    [filteredTracks, tracks, currentTrackIndex, isPlaying, seekToTrack, togglePlay]
+  )
+
+  // Toggle favorite status for a track
+  const toggleFavorite = useCallback(
+    (trackId: string) => {
+      setFavorites((prev) => ({
+        ...prev,
+        [trackId]: !prev[trackId],
+      }))
+    },
+    []
+  )
+
+  // Handle adding a new playlist
+  const handleAddPlaylist = useCallback(() => {
+    if (!youtubeUrl || !playlistTitle) {
+      toast({
+        title: 'Missing Information',
+        description: 'Please provide both a YouTube URL and a playlist title.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    // Create a new playlist with a single dummy track for now
+    const newPlaylist: YouTubePlaylist = {
+      id: `playlist-${Date.now()}`,
+      title: playlistTitle,
+      description: playlistDescription,
+      tracks: [
+        {
+          id: `track-${Date.now()}`,
+          title: 'Sample Track',
+          artist: 'Sample Artist',
+          startTime: 0,
+          endTime: 180, // 3 minutes
+        },
+      ],
+    }
+
+    setPlaylists((prev) => [...prev, newPlaylist])
+    
+    // Reset form
+    setYoutubeUrl('')
+    setPlaylistTitle('')
+    setPlaylistDescription('')
+    setIsAddingPlaylist(false)
+    
+    toast({
+      title: 'Playlist Added',
+      description: 'Your playlist has been added successfully!',
+    })
+  }, [youtubeUrl, playlistTitle, playlistDescription])
+
+  // Handle playlist selection
+  const handlePlaylistSelect = useCallback(
+    (playlist: YouTubePlaylist) => {
+      setTracks(playlist.tracks)
+      setActiveTab('current')
+      
+      // Auto-play the first track after a short delay
+      setTimeout(() => {
+        if (playlist.tracks.length > 0) {
+          seekToTrack(0)
+          togglePlay()
+        }
+      }, 300)
+    },
+    [setTracks, seekToTrack, togglePlay]
+  )
+
+  return (
+    <div className="h-[500px] w-full flex flex-col text-white overflow-hidden bg-gray-900/50 rounded-lg border border-gray-700/50">
+      {/* Main Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
+        {/* Tabs Header */}
+        <div className="flex items-center justify-between p-4 border-b border-gray-700/50">
+          <div className="flex items-center gap-2">
+            <Music className="h-4 w-4 text-blue-400" />
+            <TabsList className="h-8 p-1 bg-gray-800/50">
+              <TabsTrigger value="current" className="text-xs px-3 py-1">Current</TabsTrigger>
+              <TabsTrigger value="playlists" className="text-xs px-3 py-1">Playlists</TabsTrigger>
+            </TabsList>
+          </div>
+          <div className="text-xs text-gray-400">
+            {activeTab === 'current' ? `${tracks.length} tracks` : `${playlists.length} playlists`}
+          </div>
+        </div>
+
+        {/* Current Tracks Tab */}
+        <TabsContent value="current" className="flex-1 flex flex-col overflow-hidden">
+          {/* Search Bar */}
+          <div className="p-4 border-b border-gray-700/50 flex-shrink-0">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search tracks..."
+                className="pl-10 bg-gray-800/50 border-gray-700 text-white placeholder:text-gray-400"
+              />
+            </div>
+          </div>
+
+          {/* Track List */}
+          <ScrollArea className="flex-1">
+            <div className="p-2 pr-4">
+              {filteredTracks.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <Music className="h-12 w-12 text-gray-500 mb-4" />
+                  <h3 className="text-lg font-medium text-gray-200">No tracks found</h3>
+                  <p className="text-sm text-gray-400 mt-1">
+                    {searchQuery ? 'Try a different search term' : 'Add some tracks to get started'}
+                  </p>
+                </div>
+              ) : (
+                filteredTracks.map((track, index) => {
+                  const actualIndex = tracks.findIndex((t) => t.id === track.id)
+                  const isCurrentTrack = actualIndex === currentTrackIndex
+                  const isCurrentlyPlaying = isCurrentTrack && isPlaying
+                  const isTrackFavorite = isTrackFavorited(track.id)
+
+                  return (
+                    <div
+                      key={track.id}
+                      className={`flex items-center gap-3 p-3 rounded-lg transition-all duration-200 hover:bg-gray-800/50 cursor-pointer ${
+                        isCurrentTrack ? "bg-blue-600/20 border border-blue-600/30" : ""
+                      }`}
+                      onClick={() => handleTrackClick(index)}
+                    >
+                      {/* Play/Pause Button */}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (isCurrentTrack) {
+                            togglePlay()
+                          } else {
+                            handleTrackClick(index)
+                          }
+                        }}
+                        disabled={!isPlayerReady}
+                      >
+                        {isCurrentlyPlaying ? (
+                          <Pause className="h-4 w-4 text-white" />
+                        ) : (
+                          <Play className="h-4 w-4 text-white" />
+                        )}
+                      </Button>
+
+                      {/* Track Number */}
+                      <div
+                        className={`w-8 text-center text-sm ${
+                          isCurrentTrack ? "text-blue-400 font-semibold" : "text-gray-400"
+                        }`}
+                      >
+                        {actualIndex + 1}
+                      </div>
+
+                      {/* Track Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className={`text-sm font-medium truncate ${isCurrentTrack ? "text-blue-400" : "text-white"}`}>
+                          {track.title}
+                        </div>
+                        <div className="text-xs text-gray-400 truncate">{track.artist}</div>
+                      </div>
+
+                      {/* Duration and Actions */}
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            toggleFavorite(track.id)
+                          }}
+                        >
+                          <Heart
+                            className={`h-3 w-3 ${
+                              isTrackFavorite ? "fill-red-400 text-red-400" : "text-gray-400"
+                            }`}
+                          />
+                        </Button>
+                        <div className="text-xs text-gray-400 w-12 text-right">
+                          {formatDuration(track.startTime, track.endTime)}
+                        </div>
+                      </div>
+
+                      {/* Playing Indicator */}
+                      {isCurrentlyPlaying && (
+                        <div className="flex items-center gap-1">
+                          <div className="w-1 h-3 bg-blue-400 rounded-full animate-pulse" />
+                          <div
+                            className="w-1 h-2 bg-blue-400 rounded-full animate-pulse"
+                            style={{ animationDelay: "0.2s" }}
+                          />
+                          <div
+                            className="w-1 h-4 bg-blue-400 rounded-full animate-pulse"
+                            style={{ animationDelay: "0.4s" }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </ScrollArea>
+
+          {/* Footer */}
+          <div className="p-4 border-t border-gray-700/50">
+            <div className="flex items-center justify-between text-xs text-gray-400">
+              <div>
+                {filteredTracks.length} of {tracks.length} tracks
+              </div>
+              <div className="flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                <span>
+                  Total: {Math.floor(tracks.reduce((acc, track) => acc + (track.endTime - track.startTime), 0) / 60)} min
+                </span>
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* Playlists Tab */}
+        <TabsContent value="playlists" className="flex-1 overflow-auto">
+          <div className="p-4">
+            <Dialog open={isAddingPlaylist} onOpenChange={setIsAddingPlaylist}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm" className="w-full mb-4">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add YouTube Playlist
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Add YouTube Playlist</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="youtube-url">YouTube Playlist URL</Label>
+                    <Input
+                      id="youtube-url"
+                      placeholder="https://www.youtube.com/playlist?list=..."
+                      value={youtubeUrl}
+                      onChange={(e) => setYoutubeUrl(e.target.value)}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="playlist-title">Playlist Title</Label>
+                    <Input
+                      id="playlist-title"
+                      placeholder="My Awesome Playlist"
+                      value={playlistTitle}
+                      onChange={(e) => setPlaylistTitle(e.target.value)}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="playlist-description">Description (optional)</Label>
+                    <Input
+                      id="playlist-description"
+                      placeholder="A brief description of your playlist"
+                      value={playlistDescription}
+                      onChange={(e) => setPlaylistDescription(e.target.value)}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button variant="outline" onClick={() => setIsAddingPlaylist(false)}>
+                      Cancel
+                    </Button>
+                    <Button onClick={handleAddPlaylist}>
+                      Add Playlist
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            {playlists.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <ListMusic className="h-12 w-12 text-gray-500 mb-4" />
+                <h3 className="text-lg font-medium text-gray-200">No playlists yet</h3>
+                <p className="text-sm text-gray-400 mt-1 max-w-md">
+                  Add your first YouTube playlist to get started. Your playlists will appear here.
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                {playlists.map((playlist) => (
+                  <div 
+                    key={playlist.id}
+                    className="p-4 rounded-lg border border-gray-700/50 hover:bg-gray-800/30 cursor-pointer transition-colors"
+                    onClick={() => handlePlaylistSelect(playlist)}
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className="bg-blue-900/20 p-3 rounded-lg">
+                        <Youtube className="h-6 w-6 text-red-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-medium text-white truncate">{playlist.title}</h3>
+                        <p className="text-sm text-gray-400 mt-1 line-clamp-2">
+                          {playlist.description || 'No description'}
+                        </p>
+                        <div className="flex items-center mt-2 text-xs text-gray-500">
+                          <span>{playlist.tracks.length} tracks</span>
+                          <span className="mx-2">•</span>
+                          <span>
+                            {Math.floor(playlist.tracks.reduce((acc, t) => acc + (t.endTime - t.startTime), 0) / 60)} min
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+}

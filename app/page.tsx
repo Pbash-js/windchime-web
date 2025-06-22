@@ -6,7 +6,7 @@ import { useLoading } from "@/contexts/loading-context"
 import { LoadingScreen } from "@/components/loading-screen"
 import { WelcomeModal } from "@/components/welcome-modal"
 import { WindowManager } from "@/components/window-manager"
-import { useFirestorePreferences } from "@/hooks/use-firestore-preferences"
+import { usePreferences } from "@/contexts/preferences-context"
 import { useAuth } from "@/contexts/auth-context"
 
 const availableBackgrounds = [
@@ -21,12 +21,12 @@ export default function HomePage() {
   const [backgroundImage, setBackgroundImage] = useState(availableBackgrounds[0])
   const { isLoading, markAsLoaded } = useLoading()
   const { user } = useAuth()
-  const { preferences, loading: prefsLoading } = useFirestorePreferences()
+  const { backgroundScene } = usePreferences()
   const [contentLoaded, setContentLoaded] = useState(false)
 
-  // Mark content as loaded when all data is ready
+  // Mark content as loaded
   useEffect(() => {
-    if (!prefsLoading && !contentLoaded) {
+    if (!contentLoaded) {
       // Mark as loaded after a short delay for smooth transition
       const timer = setTimeout(() => {
         setContentLoaded(true)
@@ -35,34 +35,53 @@ export default function HomePage() {
       
       return () => clearTimeout(timer)
     }
-  }, [prefsLoading, markAsLoaded, contentLoaded])
+  }, [markAsLoaded, contentLoaded])
 
   // Show welcome modal only for new users or first visit
   useEffect(() => {
     if (contentLoaded) {
-      const hasVisited = localStorage.getItem("lofizen-visited")
+      const hasVisited = localStorage.getItem("windchime-visited")
       setShowWelcome(!hasVisited)
     }
   }, [contentLoaded])
 
-  // Update background image when preferences change
+  // Update background image when background scene changes with smooth transition
   useEffect(() => {
-    if (preferences?.backgroundScene) {
-      const backgroundMap: Record<string, string> = {
-        bedroom: "/images/bedroom-scene.png",
-        library: "/images/library-scene.png",
-        nature: "/images/nature-scene.png",
-        office: "/images/office-scene.png",
-      }
-      
-      const newBackground = backgroundMap[preferences.backgroundScene as keyof typeof backgroundMap] || availableBackgrounds[0]
-      setBackgroundImage(newBackground)
+    const backgroundMap: Record<string, string> = {
+      bedroom: "/images/bedroom-scene.png",
+      library: "/images/library-scene.png",
+      nature: "/images/nature-scene.png",
+      office: "/images/office-scene.png",
     }
-  }, [preferences?.backgroundScene])
+    
+    const newBackground = backgroundMap[backgroundScene] || availableBackgrounds[0]
+    
+    // Only update if the background has changed
+    if (newBackground !== backgroundImage) {
+      // Start fade out
+      const bgElement = document.getElementById('background-image')
+      if (bgElement) {
+        bgElement.style.opacity = '0'
+        
+        // After fade out, update the image and fade in
+        setTimeout(() => {
+          setBackgroundImage(newBackground)
+          // Force reflow
+          void bgElement.offsetHeight
+          // Fade in
+          bgElement.style.transition = 'opacity 0.5s ease-in-out'
+          bgElement.style.opacity = '1'
+        }, 300) // Match this with the CSS transition duration
+      } else {
+        // Fallback if element not found
+        setBackgroundImage(newBackground)
+      }
+    }
+  }, [backgroundScene, backgroundImage])
 
   const handleWelcomeClose = useCallback(() => {
     setShowWelcome(false)
-    localStorage.setItem("lofizen-visited", "true")
+    localStorage.setItem("windchime-visited", "true")
   }, [])
 
   return (
@@ -87,14 +106,16 @@ export default function HomePage() {
           >
             {/* Background Image */}
             <div 
-              className="fixed inset-0 -z-10 bg-cover bg-center transition-opacity duration-500"
+              id="background-image"
+              className="fixed inset-0 -z-10 bg-cover bg-center transition-opacity duration-300 ease-in-out"
               style={{ 
                 backgroundImage: `url(${backgroundImage})`,
                 opacity: contentLoaded ? 1 : 0,
-                transition: 'opacity 0.5s ease-in-out'
+                willChange: 'opacity',
+                backgroundAttachment: 'fixed'
               }}
             >
-              <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
+              <div className="absolute inset-0 bg-black/30 backdrop-blur-sm transition-opacity duration-300 ease-in-out" />
             </div>
 
             {/* Main Content */}

@@ -45,8 +45,8 @@ export function useFirestoreNotes() {
       return
     }
 
-    const notesRef = collection(db, "notes")
-    const q = query(notesRef, where("userId", "==", user.uid), orderBy("updatedAt", "desc"))
+    const notesRef = collection(db, "users", user.uid, "notes")
+    const q = query(notesRef, orderBy("updatedAt", "desc"))
 
     const unsubscribe = onSnapshot(
       q,
@@ -64,7 +64,7 @@ export function useFirestoreNotes() {
               content: data.content,
               createdAt: data.createdAt?.toDate() || new Date(),
               updatedAt: data.updatedAt?.toDate() || new Date(),
-              userId: data.userId,
+              userId: user.uid, // Satisfy the Note interface on the client
               tags: data.tags || [],
               isPinned: data.isPinned || false,
             })
@@ -118,10 +118,9 @@ export function useFirestoreNotes() {
     }
 
     try {
-      const notesRef = collection(db, "notes")
+      const notesRef = collection(db, "users", user.uid, "notes")
       await addDoc(notesRef, {
         ...noteData,
-        userId: user.uid,
         createdAt: Timestamp.fromDate(noteData.createdAt),
         updatedAt: Timestamp.fromDate(noteData.updatedAt),
       })
@@ -152,7 +151,7 @@ export function useFirestoreNotes() {
     if (!user) return
 
     try {
-      const noteRef = doc(db, "notes", noteId)
+      const noteRef = doc(db, "users", user.uid, "notes", noteId)
       const updateData: any = {
         ...updates,
         updatedAt: serverTimestamp(),
@@ -184,7 +183,7 @@ export function useFirestoreNotes() {
     if (!user) return
 
     try {
-      const noteRef = doc(db, "notes", noteId)
+      const noteRef = doc(db, "users", user.uid, "notes", noteId)
       await deleteDoc(noteRef)
 
       toast({

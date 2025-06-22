@@ -11,7 +11,8 @@ import {
   updateProfile,
   sendPasswordResetEmail,
 } from "firebase/auth"
-import { auth, googleProvider } from "@/lib/firebase"
+import { auth, db, googleProvider } from "@/lib/firebase"
+import { collection, writeBatch, doc } from "firebase/firestore"
 
 interface AuthUser {
   uid: string
@@ -58,7 +59,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         setUser(authUser)
 
-        // Store user preferences locally since Firestore isn't set up
+        // Migrate local data to Firestore before doing anything else
+        await migrateLocalData(authUser.uid)
+
+        // Now create the local user document if it doesn't exist
         createLocalUserDocument(authUser)
       } else {
         setUser(null)
@@ -68,6 +72,69 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return unsubscribe
   }, [])
+
+  const migrateLocalData = async (userId: string) => {
+    const localTasksKey = 'windchime-local-tasks';
+    const localNotesKey = 'windchime-local-notes';
+
+    const localTasks = localStorage.getItem(localTasksKey);
+    const localNotes = localStorage.getItem(localNotesKey);
+
+    if (!localTasks && !localNotes) {
+      return; // No data to migrate
+    }
+
+    const batch = writeBatch(db);
+    let itemCount = 0;
+
+    if (localTasks) {
+      try {
+        const tasks = JSON.parse(localTasks);
+        if (Array.isArray(tasks)) {
+          tasks.forEach((task: any) => {
+            const taskRef = doc(collection(db, 'users', userId, 'tasks'));
+            // Ensure we don't migrate invalid data
+            if (task.title && task.dueDate) {
+                batch.set(taskRef, { ...task, userId });
+                itemCount++;
+            }
+          });
+        }
+      } catch (e) {
+        console.error("Error parsing local tasks:", e);
+      }
+    }
+
+    if (localNotes) {
+        try {
+            const notes = JSON.parse(localNotes);
+            if (Array.isArray(notes)) {
+                notes.forEach((note: any) => {
+                    const noteRef = doc(collection(db, 'users', userId, 'notes'));
+                    // Ensure we don't migrate invalid data
+                    if (note.title && note.content) {
+                        batch.set(noteRef, { ...note, userId });
+                        itemCount++;
+                    }
+                });
+            }
+        } catch (e) {
+            console.error("Error parsing local notes:", e);
+        }
+    }
+
+    if (itemCount > 0) {
+        try {
+            await batch.commit();
+            console.log(`Successfully migrated ${itemCount} items to Firestore.`);
+            // Clear local storage after successful migration
+            if (localTasks) localStorage.removeItem(localTasksKey);
+            if (localNotes) localStorage.removeItem(localNotesKey);
+        } catch (error) {
+            console.error("Error migrating local data to Firestore:", error);
+        }
+    }
+  };
 
   const createLocalUserDocument = (user: AuthUser) => {
     const userPrefsKey = `user-preferences-${user.uid}`

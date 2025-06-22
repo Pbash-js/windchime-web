@@ -32,6 +32,14 @@ export interface UserPreferences {
     analytics: boolean
     crashReports: boolean
   }
+  windowStyles?: {
+    headerAutoHide: boolean
+    headerHideDelay: number
+    windowBgOpacity: number
+    windowBgColor: string
+    windowBorderRadius: number
+    windowShadow: string
+  }
 }
 
 const defaultPreferences: UserPreferences = {
@@ -57,6 +65,14 @@ const defaultPreferences: UserPreferences = {
     analytics: true,
     crashReports: true,
   },
+  windowStyles: {
+    headerAutoHide: false,
+    headerHideDelay: 2000,
+    windowBgOpacity: 0.85,
+    windowBgColor: '24,24,28',
+    windowBorderRadius: 8,
+    windowShadow: '0 8px 30px rgba(0, 0, 0, 0.3)'
+  }
 }
 
 export function useFirestorePreferences() {
@@ -190,46 +206,81 @@ export function useFirestorePreferences() {
     }
   }
 
-  const updatePreferences = async (newPreferences: Partial<UserPreferences>) => {
+  const updatePreferences = useCallback(async (updates: Partial<UserPreferences>) => {
     if (!user) return
-
-    const mergedPrefs = { ...preferences, ...newPreferences }
-    setPreferences(mergedPrefs)
-
-    // Notify all listeners of the change
-    listeners.forEach(listener => listener(mergedPrefs))
-
-    if (!isOnline) {
-      // Queue for later sync when online
-      const queuedUpdates = JSON.parse(localStorage.getItem('queuedPrefUpdates') || '[]')
-      queuedUpdates.push(mergedPrefs)
-      localStorage.setItem('queuedPrefUpdates', JSON.stringify(queuedUpdates))
-      return
-    }
-
+    
     try {
-      await updateDoc(doc(db, 'users', user.uid), {
-        preferences: mergedPrefs,
+      const userRef = doc(db, "users", user.uid)
+      await updateDoc(userRef, {
+        preferences: updates,
         updatedAt: new Date().toISOString(),
       })
-      toast({
-        title: 'Preferences saved',
-        description: 'Your settings have been updated.',
+      
+      // Update local state with proper type safety
+      setPreferences(prev => {
+        const updatedPrefs: UserPreferences = {
+          ...prev,
+          ...updates,
+          pomodoroSettings: {
+            ...prev.pomodoroSettings,
+            ...(updates.pomodoroSettings || {})
+          },
+          notifications: {
+            ...prev.notifications,
+            ...(updates.notifications || {})
+          },
+          privacy: {
+            ...prev.privacy,
+            ...(updates.privacy || {})
+          },
+          windowStyles: {
+            headerAutoHide: updates.windowStyles?.headerAutoHide ?? prev.windowStyles?.headerAutoHide ?? false,
+            headerHideDelay: updates.windowStyles?.headerHideDelay ?? prev.windowStyles?.headerHideDelay ?? 2000,
+            windowBgOpacity: updates.windowStyles?.windowBgOpacity ?? prev.windowStyles?.windowBgOpacity ?? 0.85,
+            windowBgColor: updates.windowStyles?.windowBgColor ?? prev.windowStyles?.windowBgColor ?? '24,24,28',
+            windowBorderRadius: updates.windowStyles?.windowBorderRadius ?? prev.windowStyles?.windowBorderRadius ?? 8,
+            windowShadow: updates.windowStyles?.windowShadow ?? prev.windowStyles?.windowShadow ?? '0 8px 30px rgba(0, 0, 0, 0.3)'
+          }
+        }
+        return updatedPrefs
+      })
+      
+      // Notify listeners with the updated preferences
+      setPreferences(prev => {
+        const updatedPrefs = {
+          ...prev,
+          ...updates,
+          pomodoroSettings: {
+            ...prev.pomodoroSettings,
+            ...(updates.pomodoroSettings || {})
+          },
+          notifications: {
+            ...prev.notifications,
+            ...(updates.notifications || {})
+          },
+          privacy: {
+            ...prev.privacy,
+            ...(updates.privacy || {})
+          },
+          windowStyles: {
+            headerAutoHide: updates.windowStyles?.headerAutoHide ?? prev.windowStyles?.headerAutoHide ?? false,
+            headerHideDelay: updates.windowStyles?.headerHideDelay ?? prev.windowStyles?.headerHideDelay ?? 2000,
+            windowBgOpacity: updates.windowStyles?.windowBgOpacity ?? prev.windowStyles?.windowBgOpacity ?? 0.85,
+            windowBgColor: updates.windowStyles?.windowBgColor ?? prev.windowStyles?.windowBgColor ?? '24,24,28',
+            windowBorderRadius: updates.windowStyles?.windowBorderRadius ?? prev.windowStyles?.windowBorderRadius ?? 8,
+            windowShadow: updates.windowStyles?.windowShadow ?? prev.windowStyles?.windowShadow ?? '0 8px 30px rgba(0, 0, 0, 0.3)'
+          }
+        }
+        
+        // Notify all listeners with the updated preferences
+        listeners.forEach(listener => listener(updatedPrefs))
+        return updatedPrefs
       })
     } catch (err) {
-      console.error('Error updating preferences:', err)
+      console.error("Error updating preferences:", err)
       setError(err as Error)
-      toast({
-        title: 'Error',
-        description: 'Failed to save preferences. Please try again.',
-        variant: 'destructive',
-      })
-      // Revert on error
-      setPreferences(preferences)
-      // Notify listeners of the revert
-      listeners.forEach(listener => listener(preferences))
     }
-  }
+  }, [user, listeners])
 
   const updatePomodoroSettings = async (settings: Partial<PomodoroSettings>) => {
     const newPomodoroSettings = { ...preferences.pomodoroSettings, ...settings }

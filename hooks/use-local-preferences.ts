@@ -29,7 +29,14 @@ export interface UserPreferences {
     analytics: boolean
     crashReports: boolean
   }
-  windowBgOpacity?: number;
+  windowStyles?: {
+    headerAutoHide: boolean
+    headerHideDelay: number
+    windowBgOpacity: number
+    windowBgColor: string
+    windowBorderRadius: number
+    windowShadow: string
+  }
 }
 
 const defaultPreferences: UserPreferences = {
@@ -55,7 +62,14 @@ const defaultPreferences: UserPreferences = {
     analytics: true,
     crashReports: true,
   },
-  windowBgOpacity: 0.85,
+  windowStyles: {
+    headerAutoHide: false,
+    headerHideDelay: 2000,
+    windowBgOpacity: 0.85,
+    windowBgColor: '24,24,28',
+    windowBorderRadius: 8,
+    windowShadow: '0 8px 30px rgba(0, 0, 0, 0.3)'
+  }
 }
 
 export function useLocalPreferences() {

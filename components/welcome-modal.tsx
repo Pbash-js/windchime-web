@@ -39,7 +39,7 @@ export function WelcomeModal({ onClose }: WelcomeModalProps) {
     try {
       await signInWithGoogle()
       toast({
-        title: "Welcome to Lofizen!",
+        title: "Welcome to Windchime!",
         description: "Successfully signed in with Google",
       })
       onClose()
@@ -94,7 +94,7 @@ export function WelcomeModal({ onClose }: WelcomeModalProps) {
       await signUpWithEmail(signUpEmail, signUpPassword, signUpName)
       toast({
         title: "Account created!",
-        description: "Welcome to Lofizen",
+        description: "Welcome to Windchime",
       })
       onClose()
     } catch (error: any) {
@@ -197,7 +197,7 @@ export function WelcomeModal({ onClose }: WelcomeModalProps) {
               <div className="max-w-md mx-auto">
                 <div className="mb-6">
                   <h2 className="text-2xl font-semibold text-gray-900 mb-2">Welcome to</h2>
-                  <h2 className="text-2xl font-semibold text-green-600 mb-4">lofizen!</h2>
+                  <h2 className="text-2xl font-semibold text-green-600 mb-4">Windchime!</h2>
                   <p className="text-gray-600">Create an account to unlock more productivity features</p>
                 </div>
 
