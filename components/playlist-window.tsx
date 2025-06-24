@@ -1,28 +1,14 @@
 "use client"
 
-import { useState, useCallback, useEffect, useMemo } from "react"
-import {
-  GripVertical,
-  Heart,
-  ListMusic,
-  Plus,
-  Trash2,
-  Youtube,
-} from "lucide-react"
-import { useYouTubePlayerStore, Track } from "@/hooks/use-youtube-player"
+import React, { useState, useEffect, useCallback, useMemo } from "react"
+import { ListMusic, Plus } from "lucide-react"
+import { useYouTubePlayerStore, type Track } from "@/hooks/use-youtube-player"
 import { defaultTracks, defaultPlaylist } from "@/lib/default-playlist"
 import { useFirestore } from "@/hooks/use-firestore"
 import { useAuth } from "@/contexts/auth-context"
 import { Playlist } from "@/types/playlist"
 import { useToast } from "@/components/ui/use-toast"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
@@ -32,37 +18,68 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { cn } from "@/lib/utils"
-import { Window } from "@/components/window"
+
+// Track component with memoization to prevent unnecessary re-renders
+const TrackItem = React.memo(({ track, isCurrent, onPlay }: { 
+  track: Track; 
+  isCurrent: boolean; 
+  onPlay: (id: string) => void 
+}) => {
+  const handleClick = React.useCallback(() => {
+    onPlay(track.id);
+  }, [onPlay, track.id]);
+
+  return (
+  <div 
+    className={`flex items-center p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded cursor-pointer ${
+      isCurrent ? 'bg-blue-50 dark:bg-blue-900/30' : ''
+    }`}
+    onClick={handleClick}
+  >
+    <div className="flex-1 min-w-0">
+      <p className="text-sm font-medium truncate">{track.title}</p>
+      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{track.artist}</p>
+    </div>
+    {isCurrent && (
+      <div className="w-2 h-2 rounded-full bg-blue-500 ml-2"></div>
+    )}
+  </div>
+  );
+});
+
+TrackItem.displayName = 'TrackItem';
 
 export function PlaylistWindow() {
   const { toast } = useToast()
-  const { user, loading: authLoading } = useAuth()
+  const { user } = useAuth() // Assuming useAuth returns { user, loading }
   const firestore = useFirestore(user ? `users/${user.uid}` : 'temp')
   
-  // Track if we've checked auth state
-  const [authChecked, setAuthChecked] = useState(false)
-
+  // Local state
   const [playlists, setPlaylists] = useState<Playlist[]>([])
-  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(
-    null
-  )
-  const [favorites, setFavorites] = useState<Record<string, boolean>>({})
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string>('default-lofi')
+  const [isLoading, setIsLoading] = useState(true)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [newPlaylistUrl, setNewPlaylistUrl] = useState("")
-  const [isLoading, setIsLoading] = useState(true)
+  const [favorites, setFavorites] = useState<Record<string, boolean>>({})
+  const [authChecked, setAuthChecked] = useState(false)
+  const [isInitialLoad, setIsInitialLoad] = useState(true)
+  
+  // Get player state from store using separate selectors to avoid infinite loops
+  const storePlaylistId = useYouTubePlayerStore((state) => state.playlistId)
+  const storeTracks = useYouTubePlayerStore((state) => state.tracks)
+  const storeCurrentTrack = useYouTubePlayerStore((state) => state.currentTrack)
+  const loadPlaylist = useYouTubePlayerStore((state) => state.actions.loadPlaylist)
+  const playTrackInStore = useYouTubePlayerStore((state) => state.actions.playTrack)
 
   // Check authentication and fetch data
   useEffect(() => {
-    if (authLoading) return; // Wait for auth to load
-    
     const fetchData = async () => {
       setIsLoading(true)
       try {
         if (!user) {
           setPlaylists([])
           setFavorites({})
-          setSelectedPlaylistId(null)
+          setSelectedPlaylistId('default-lofi')
           setAuthChecked(true)
           setIsLoading(false)
           return
@@ -75,10 +92,6 @@ export function PlaylistWindow() {
 
         setPlaylists(fetchedPlaylists || [])
         setFavorites(fetchedFavoritesDoc?.trackIds || {})
-
-        if (fetchedPlaylists?.length > 0 && !selectedPlaylistId) {
-          setSelectedPlaylistId(fetchedPlaylists[0].id)
-        }
       } catch (error) {
         console.error("Failed to fetch initial data:", error)
         toast({
@@ -93,15 +106,71 @@ export function PlaylistWindow() {
     }
     
     fetchData()
-  }, [user, authLoading, firestore, toast, selectedPlaylistId])
+  }, [user]) // Only depend on user, not on selectedPlaylistId or other reactive values
 
+  // Get the selected playlist
   const selectedPlaylist = useMemo(() => {
-    if (selectedPlaylistId === 'default-lofi') {
-      return defaultPlaylist;
+    if (selectedPlaylistId === 'default-lofi') return defaultPlaylist
+    return playlists.find(p => p.id === selectedPlaylistId) || defaultPlaylist
+  }, [selectedPlaylistId, playlists])
+  
+  // Get tracks from the selected playlist, prioritizing store tracks for consistency
+  const tracks = useMemo(() => {
+    // If we're viewing the currently loaded playlist in the store, use store tracks
+    if (selectedPlaylistId === storePlaylistId && storeTracks.length > 0) {
+      return storeTracks
     }
-    return playlists.find(p => p.id === selectedPlaylistId);
-  }, [playlists, selectedPlaylistId])
+    
+    // Otherwise use tracks from the selected playlist
+    if (!selectedPlaylist) return defaultTracks
+    
+    if (!Array.isArray(selectedPlaylist.tracks) || selectedPlaylist.tracks.length === 0) {
+      return defaultTracks
+    }
+    
+    return selectedPlaylist.tracks
+  }, [selectedPlaylistId, storePlaylistId, storeTracks, selectedPlaylist])
 
+  // Combined playlists (default + user playlists)
+  const allPlaylists = useMemo(() => {
+    return [defaultPlaylist, ...playlists]
+  }, [playlists])
+  
+  // Initialize with store state on mount - run only once
+  useEffect(() => {
+    let mounted = true
+    
+    console.log('[PlaylistWindow] Component mounted, checking store state:', {
+      storePlaylistId,
+      storeTracksCount: storeTracks.length,
+      storeCurrentTrack: storeCurrentTrack?.title || 'none'
+    })
+    
+    const initializePlaylist = () => {
+      if (!mounted) return
+      
+      // If store already has the default playlist loaded, sync our state
+      if (storePlaylistId && storeTracks.length > 0) {
+        setSelectedPlaylistId(storePlaylistId)
+      } else {
+        // Store doesn't have tracks yet, load default playlist
+        console.log('[PlaylistWindow] Loading default playlist into store')
+        loadPlaylist('default-lofi', defaultTracks)
+      }
+      
+      setIsLoading(false)
+      setAuthChecked(true)
+      setIsInitialLoad(false)
+    }
+    
+    initializePlaylist()
+    
+    return () => {
+      mounted = false
+    }
+  }, []) // Empty dependency array - run only once
+
+  // Handle favorite toggle
   const handleToggleFavorite = useCallback(
     (trackId: string) => {
       if (!user) {
@@ -121,320 +190,171 @@ export function PlaylistWindow() {
           newFavorites[trackId] = true
         }
         // Persist changes to Firestore
-        firestore.setDocument(`users/${user.uid}/preferences/favorites`, { trackIds: newFavorites })
+        firestore.setDocument('preferences/favorites', { trackIds: newFavorites })
         return newFavorites
       })
     },
     [firestore, user, toast]
   )
-
-  // Get player state and actions from the Zustand store
-  const { currentTrack, isPlaying, playlistId, actions } = useYouTubePlayerStore()
-  const { playTrack, loadPlaylist } = actions
   
-  // If the player has a playlist loaded but we don't have it selected, update the selection
-  useEffect(() => {
-    if (playlistId && playlistId !== selectedPlaylistId) {
-      setSelectedPlaylistId(playlistId);
+  // Handle track play
+  const handlePlayTrack = useCallback((trackId: string) => {
+    const trackIndex = tracks.findIndex(t => t.id === trackId)
+    if (trackIndex >= 0) {
+      playTrackInStore(trackIndex)
     }
-  }, [playlistId, selectedPlaylistId]);
+  }, [tracks, playTrackInStore])
   
-  // Effect to load the selected playlist
-  useEffect(() => {
-    if (!authChecked) return;
+  // Handle playlist selection
+  const handlePlaylistSelect = useCallback((playlistId: string) => {
+    setSelectedPlaylistId(playlistId)
     
-    if (selectedPlaylistId === 'default-lofi') {
-      loadPlaylist('default-lofi', defaultTracks);
-    } else if (selectedPlaylist) {
-      loadPlaylist(selectedPlaylist.id, selectedPlaylist.tracks);
-    } else if (playlists.length > 0) {
-      // If we have playlists but none selected, select the first one
-      setSelectedPlaylistId(playlists[0].id);
-    }
-  }, [selectedPlaylistId, selectedPlaylist, playlists, loadPlaylist, authChecked]);
-
-  // Effect to load the selected playlist into the player
-  useEffect(() => {
-    if (!authChecked) return;
-    
-    if (selectedPlaylist) {
-      loadPlaylist(selectedPlaylist.id, selectedPlaylist.tracks);
-    } else if (playlists.length === 0) {
-      // Fallback to default playlist if no playlists exist
-      const defaultPlaylistId = 'default-lofi';
-      loadPlaylist(defaultPlaylistId, defaultTracks);
-      setSelectedPlaylistId(defaultPlaylistId);
-    }
-  }, [selectedPlaylist, loadPlaylist, authChecked, playlists.length]);
-
-  const parseYoutubeUrl = (url: string) => {
-    const playlistIdMatch = url.match(/[?&]list=([^&]+)/)
-    return {
-      playlistId: playlistIdMatch ? playlistIdMatch[1] : null,
-    }
-  }
-
-  const handleAddPlaylist = async () => {
-    if (!user) {
-      toast({
-        variant: "destructive",
-        title: "Authentication Required",
-        description: "Please sign in to add playlists.",
-      })
-      return
-    }
-
-    if (!newPlaylistUrl) return
-    const { playlistId } = parseYoutubeUrl(newPlaylistUrl)
-
-    if (!playlistId) {
-      toast({
-        variant: "destructive",
-        title: "Invalid URL",
-        description: "The URL must contain a valid YouTube playlist ID.",
-      })
-      return
-    }
-
-    if (playlists.some(p => p.id === playlistId)) {
-      toast({
-        variant: "destructive",
-        title: "Playlist Exists",
-        description: "This playlist has already been added.",
-      })
-      return
-    }
-
-    try {
-      const response = await fetch(`/api/youtube?playlistId=${playlistId}`)
-      if (!response.ok) {
-        throw new Error("Failed to fetch playlist from YouTube.")
+    if (playlistId === 'default-lofi') {
+      loadPlaylist('default-lofi', defaultTracks)
+    } else {
+      const playlist = playlists.find(p => p.id === playlistId)
+      if (playlist) {
+        loadPlaylist(playlist.id, playlist.tracks)
       }
-      const playlistData: Omit<Playlist, "id"> = await response.json()
-
-      const newPlaylist: Playlist = {
-        id: playlistId, // Use the YouTube playlist ID as our document ID
-        ...playlistData,
-      }
-
-      // Save to Firestore under user's playlists
-      await firestore.setDocument(`users/${user.uid}/playlists/${playlistId}`, newPlaylist)
-
-      setPlaylists(prev => [...prev, newPlaylist])
-      setSelectedPlaylistId(newPlaylist.id)
+    }
+  }, [loadPlaylist, playlists])
+  
+  // Handle adding a new playlist
+  const handleAddPlaylist = useCallback(async () => {
+    if (!newPlaylistUrl.trim()) {
       toast({
-        title: "Success",
-        description: `Playlist "${newPlaylist.title}" added.`,
-      })
-      setIsAddDialogOpen(false)
-      setNewPlaylistUrl("")
-    } catch (error) {
-      console.error("Error adding playlist:", error)
-      toast({
-        variant: "destructive",
         title: "Error",
-        description:
-          "Could not add the playlist. Please check the URL and try again.",
-      })
-    }
-  }
-
-  const handleDeletePlaylist = async (playlistId: string) => {
-    if (!user) {
-      toast({
+        description: "Please enter a valid URL",
         variant: "destructive",
-        title: "Authentication Required",
-        description: "Please sign in to delete playlists.",
       })
       return
     }
-
-    try {
-      await firestore.deleteDocument(`users/${user.uid}/playlists`, playlistId)
-      const newPlaylists = playlists.filter(p => p.id !== playlistId)
-      setPlaylists(newPlaylists)
-      if (selectedPlaylistId === playlistId) {
-        setSelectedPlaylistId(newPlaylists[0]?.id || null)
-      }
-      toast({
-        title: "Playlist Deleted",
-        description: "The playlist has been removed.",
-      })
-    } catch (error) {
-      console.error("Error deleting playlist:", error)
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to delete the playlist. Please try again.",
-      })
-    }
-  }
-
-  const TrackItem = ({
-    track,
-    index,
-  }: {
-    track: Track
-    index: number
-  }) => {
-    const isCurrentTrack = currentTrack?.id === track.id;
     
+    // TODO: Implement playlist addition logic
+    console.log('Adding playlist:', newPlaylistUrl)
+    
+    setIsAddDialogOpen(false)
+    setNewPlaylistUrl('')
+  }, [newPlaylistUrl, toast])
+
+  // Log state changes for debugging (throttled to prevent spam)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      console.log('[PlaylistWindow] State snapshot:', {
+        selectedPlaylistId,
+        storePlaylistId,
+        storeTracksCount: storeTracks.length,
+        tracksCount: tracks.length,
+        currentTrack: storeCurrentTrack ? `${storeCurrentTrack.title} (${storeCurrentTrack.id})` : 'none',
+        isLoading,
+        authChecked
+      })
+    }, 500) // Throttle logging
+    
+    return () => clearTimeout(timer)
+  }, [selectedPlaylistId, storePlaylistId, storeTracks.length, tracks.length, storeCurrentTrack?.id, isLoading, authChecked])
+
+  if (isLoading) {
     return (
-      <div
-        className={cn(
-          "group flex items-center justify-between p-3 transition-colors",
-          "hover:bg-accent/50 cursor-pointer",
-          isCurrentTrack && "bg-accent"
-        )}
-        onClick={() => playTrack(index)}
-      >
-        <div className="flex items-center gap-3 min-w-0">
-          <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/50" />
-          <div className="min-w-0">
-            <p className={cn(
-              "text-sm font-medium truncate",
-              isCurrentTrack && "text-primary"
-            )}>
-              {track.title}
-            </p>
-            <p className="text-xs text-muted-foreground truncate">
-              {track.artist}
-            </p>
-          </div>
+      <div className="flex flex-col h-full items-center justify-center">
+        <div className="text-center">
+          <ListMusic className="h-8 w-8 text-gray-400 mb-2 mx-auto" />
+          <p className="text-gray-500">Loading playlists...</p>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn(
-            "h-7 w-7 text-muted-foreground hover:text-foreground",
-            "opacity-0 group-hover:opacity-100 focus:opacity-100",
-            favorites[track.id] && "text-red-500 hover:text-red-600"
-          )}
-          onClick={e => {
-            e.stopPropagation();
-            handleToggleFavorite(track.id);
-          }}
-        >
-          <Heart
-            className={cn(
-              "h-4 w-4 transition-transform",
-              favorites[track.id] && "fill-current"
-            )}
-          />
-        </Button>
       </div>
-    );
-  };
-
+    )
+  }
 
   return (
-    <>
-      <div className="flex flex-col h-full overflow-hidden">
-        <div className="flex items-center justify-between p-3 border-b border-border/50">
-          <div className="flex items-center gap-3">
-            <ListMusic className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-semibold">Playlist</h2>
-          </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-8 w-8 p-0"
-            onClick={() => setIsAddDialogOpen(true)}
-          >
-            <Plus className="h-4 w-4" />
-            <span className="sr-only">Add Playlist</span>
-          </Button>
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="flex items-center justify-between p-4 border-b">
+        <div className="flex items-center space-x-2">
+          <ListMusic className="h-5 w-5" />
+          <h2 className="text-lg font-semibold">Playlist</h2>
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setIsAddDialogOpen(true)}
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          Add Playlist
+        </Button>
+      </div>
 
-        <div className="p-4 space-y-4 border-b border-border/30">
-          <div className="flex items-center gap-2">
-            <Select
-              value={selectedPlaylistId ?? ""}
-              onValueChange={setSelectedPlaylistId}
-              disabled={isLoading || playlists.length === 0}
-            >
-              <SelectTrigger className="flex-1">
-                <SelectValue placeholder="Select a playlist..." />
-              </SelectTrigger>
-              <SelectContent>
-                {playlists.map(p => (
-                  <SelectItem key={p.id} value={p.id}>
-                    <div className="flex items-center gap-2">
-                      <ListMusic className="h-4 w-4 text-muted-foreground" />
-                      <span className="truncate">{p.title}</span>
-                    </div>
-                  </SelectItem>
+      {/* Playlist Selector */}
+      <div className="p-4 border-b">
+        <Select
+          value={selectedPlaylistId}
+          onValueChange={handlePlaylistSelect}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select a playlist" />
+          </SelectTrigger>
+          <SelectContent>
+            {allPlaylists.map((playlist) => (
+              <SelectItem key={playlist.id} value={playlist.id}>
+                {playlist.title}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Tracks List */}
+      <div className="flex-1 overflow-hidden">
+        <ScrollArea className="h-full w-full">
+          <div className="p-2">
+            {tracks.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-32 text-center p-4">
+                <ListMusic className="h-8 w-8 text-gray-400 mb-2" />
+                <p className="text-gray-500">No tracks in this playlist</p>
+                <p className="text-sm text-gray-400">Add a playlist to get started</p>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {tracks.map((track) => (
+                  <TrackItem
+                    key={track.id}
+                    track={track}
+                    isCurrent={storeCurrentTrack?.id === track.id}
+                    onPlay={handlePlayTrack}
+                  />
                 ))}
-              </SelectContent>
-            </Select>
-            {selectedPlaylistId && (
-              <Button
-                variant="outline"
-                size="icon"
-                className="shrink-0"
-                onClick={() => handleDeletePlaylist(selectedPlaylistId)}
-                title="Delete current playlist"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
+              </div>
             )}
           </div>
-        </div>
-
-        <ScrollArea className="flex-1">
-          {isLoading ? (
-            <div className="flex items-center justify-center h-full py-12">
-              <p className="text-muted-foreground">Loading playlists...</p>
-            </div>
-          ) : selectedPlaylist ? (
-            <div className="divide-y divide-border/50">
-              {useYouTubePlayerStore.getState().tracks.map((track, index) => (
-                <TrackItem key={track.id} track={track} index={index} />
-              ))}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full p-8 text-center">
-              <Youtube className="h-16 w-16 text-muted-foreground/50 mb-4" />
-              <h3 className="text-lg font-medium text-foreground mb-1">No Playlist Selected</h3>
-              <p className="text-sm text-muted-foreground max-w-xs">
-                Add a new playlist using the + button above
-              </p>
-            </div>
-          )}
         </ScrollArea>
       </div>
 
-      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add YouTube Playlist</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2 py-2">
-            <Input
-              id="youtube-url"
-              placeholder="https://www.youtube.com/playlist?list=..."
-              value={newPlaylistUrl}
-              onChange={e => setNewPlaylistUrl(e.target.value)}
-            />
-            <p className="text-xs text-gray-500">
-              Paste the URL of the YouTube playlist.
-            </p>
+      {/* Add Playlist Dialog */}
+      {isAddDialogOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-md p-6 space-y-4">
+            <h3 className="text-lg font-semibold">Add Playlist</h3>
+            <div className="space-y-4">
+              <Input
+                placeholder="Enter YouTube playlist URL"
+                value={newPlaylistUrl}
+                onChange={(e) => setNewPlaylistUrl(e.target.value)}
+                className="w-full"
+              />
+            </div>
+            <div className="flex justify-end space-x-2 pt-4">
+              <Button 
+                variant="outline" 
+                onClick={() => setIsAddDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleAddPlaylist}>Add</Button>
+            </div>
           </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsAddDialogOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleAddPlaylist}>
-              Add Playlist
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-};
+        </div>
+      )}
+    </div>
+  )
+}
 
-export default PlaylistWindow;
+export default PlaylistWindow

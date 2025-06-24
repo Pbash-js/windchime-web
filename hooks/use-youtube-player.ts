@@ -20,13 +20,14 @@ interface PlayerState {
   volume: number;
   isMuted: boolean;
   isShuffleEnabled: boolean;
-  playlistId: string | null;
+  playlistId: string;
   tracks: Track[];
   currentTrack: Track | null;
   currentTrackIndex: number;
   currentTime: number;
   duration: number;
   actions: PlayerActions;
+  _hasInitialized: boolean;
 }
 
 interface PlayerActions {
@@ -46,6 +47,18 @@ interface PlayerActions {
   playTrack: (trackIndex: number) => void;
 }
 
+// Helper function to compare tracks arrays
+const areTracksEqual = (a: Track[] = [], b: Track[] = []) => {
+  if (a.length !== b.length) return false;
+  return a.every((track, i) => track.id === b[i]?.id);
+};
+
+console.log('[Zustand] Initializing store with default values:', {
+  playlistId: defaultPlaylist.id,
+  tracksCount: defaultTracks.length,
+  firstTrack: defaultTracks[0] ? `${defaultTracks[0].title} (${defaultTracks[0].id})` : 'none'
+});
+
 export const useYouTubePlayerStore = create<PlayerState>((set, get) => ({
   player: null,
   isReady: false,
@@ -59,6 +72,7 @@ export const useYouTubePlayerStore = create<PlayerState>((set, get) => ({
   currentTrackIndex: 0,
   currentTime: 0,
   duration: 0,
+  _hasInitialized: false,
   actions: {
     init: (player: any) => {
       if (!player) return;
@@ -175,28 +189,67 @@ export const useYouTubePlayerStore = create<PlayerState>((set, get) => ({
       }
     },
     toggleShuffle: () => set((state) => ({ isShuffleEnabled: !state.isShuffleEnabled })),
-    loadPlaylist: (playlistId: string, tracks: Track[], trackToPlayId?: string) => {
-      if (!tracks || tracks.length === 0) {
-        console.warn('Attempted to load an empty playlist');
+    loadPlaylist: (playlistId: string, newTracks: Track[], trackToPlayId?: string) => {
+      const state = get();
+      
+      // Prevent unnecessary updates if the playlist and tracks are the same
+      if (state.playlistId === playlistId && areTracksEqual(state.tracks, newTracks)) {
+        console.log('[Zustand] Skipping duplicate playlist load:', playlistId);
         return;
       }
       
-      const trackIndex = trackToPlayId ? Math.max(0, tracks.findIndex(t => t.id === trackToPlayId)) : 0;
-      const currentTrack = tracks[trackIndex] || tracks[0];
+      if (!newTracks || newTracks.length === 0) {
+        console.warn('[Zustand] Attempted to load an empty playlist');
+        return;
+      }
       
-      set({ 
-        playlistId, 
-        tracks, 
-        currentTrack,
-        currentTrackIndex: trackIndex,
-        isPlaying: false // Reset playing state on playlist change
-      });
+      console.log('[Zustand] Loading playlist:', playlistId, 'with', newTracks.length, 'tracks');
       
-      // Only auto-play if we have a valid track and player is ready
-      const { player, isReady } = get();
-      if (isReady && player) {
-        get().actions.playTrack(trackIndex);
-        get().actions.playTrack(get().currentTrackIndex);
+      // Find the track to play
+      const trackIndex = trackToPlayId 
+        ? Math.max(0, newTracks.findIndex(t => t.id === trackToPlayId)) 
+        : 0;
+      const currentTrack = newTracks[trackIndex] || newTracks[0];
+      
+      // Only update state if something actually changed
+      const stateUpdates: Partial<PlayerState> = {};
+      let hasChanges = false;
+      
+      if (state.playlistId !== playlistId) {
+        stateUpdates.playlistId = playlistId;
+        hasChanges = true;
+      }
+      
+      if (!areTracksEqual(state.tracks, newTracks)) {
+        stateUpdates.tracks = newTracks;
+        hasChanges = true;
+      }
+      
+      if (state.currentTrack?.id !== currentTrack.id) {
+        stateUpdates.currentTrack = currentTrack;
+        stateUpdates.currentTrackIndex = trackIndex;
+        stateUpdates.isPlaying = false; // Reset playing state on track change
+        hasChanges = true;
+      }
+      
+      if (hasChanges) {
+        console.log('[Zustand] Updating playlist state:', {
+          playlistId,
+          trackCount: newTracks.length,
+          currentTrack: currentTrack?.title,
+          currentTrackIndex: trackIndex
+        });
+        
+        set(stateUpdates);
+        
+        // Only auto-play if we have a valid track and player is ready
+        const { player, isReady } = get();
+        if (isReady && player) {
+          console.log('[Zustand] Player ready, playing track:', trackIndex, currentTrack.title);
+          get().actions.playTrack(trackIndex);
+        }
+      } else {
+        console.log('[Zustand] No state changes needed for playlist:', playlistId);
       }
     },
     setCurrentTime: (currentTime: number) => set({ currentTime }),

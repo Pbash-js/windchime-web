@@ -138,18 +138,31 @@ export default function MediaControls({ currentTime: propCurrentTime }: MediaCon
     }
   }, [propCurrentTime]);
 
-  // Auto-update time if not controlled by props - memoized to prevent unnecessary re-renders
+  // Auto-update time if not controlled by props
   useEffect(() => {
-    if (!propCurrentTime) {
-      const interval = setInterval(() => {
-        setLocalTime(prevTime => {
-          const newTime = new Date();
-          // Only update if the second has changed
-          return prevTime.getSeconds() !== newTime.getSeconds() ? newTime : prevTime;
-        });
-      }, 1000);
-      return () => clearInterval(interval);
-    }
+    if (propCurrentTime) return;
+    
+    let intervalId: NodeJS.Timeout;
+    let lastSecond = -1;
+    
+    const updateTime = () => {
+      const now = new Date();
+      const currentSecond = now.getSeconds();
+      
+      // Only update if the second has changed
+      if (currentSecond !== lastSecond) {
+        lastSecond = currentSecond;
+        setLocalTime(now);
+      }
+    };
+    
+    // Initial update
+    updateTime();
+    
+    // Set up interval for updates
+    intervalId = setInterval(updateTime, 200);
+    
+    return () => clearInterval(intervalId);
   }, [propCurrentTime]);
 
   // Check for custom links
@@ -642,9 +655,9 @@ export default function MediaControls({ currentTime: propCurrentTime }: MediaCon
                 >
                   {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
                 </Button>
-                <div className="w-20 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <div className="w-20 opacity-100 transition-opacity duration-200">
                   <Slider
-                    value={[isMuted ? 0 : volume]}
+                    value={[isMuted ? 0 : volume * 100]}
                     onValueChange={handleVolumeChange}
                     max={100}
                     step={1}
