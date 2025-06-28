@@ -10,8 +10,8 @@ import { CalendarWindow } from "./calendar-window";
 import { SettingsWindow } from "./settings-window";
 import { PlaylistWindow } from "./playlist-window";
 import { CustomLinksWindow } from "./custom-links-window";
-import MediaControls from "./media-controls";
-import { useWindows, isWidgetWindow, WidgetWindowType } from "@/hooks/use-windows";
+import MediaControls from "./MediaControls";
+import { useWindows, isWidgetWindow } from "@/hooks/use-windows";
 import { CheckSquare, FileText, Timer, Calendar, Settings, Music, Link as LinkIcon, LayoutGrid } from "lucide-react";
 import { WidgetWindow } from "./widget-window";
 import { WidgetsPanel } from "./widgets-panel";
@@ -104,7 +104,20 @@ const createWindowComponents = (windows: any): WindowComponents => {
         components.notes = createWindow('notes', 'Notes', <FileText className="h-4 w-4" />, <NotesPanel />);
         break;
       case 'timer':
-        components.timer = createWindow('timer', 'Timer', <Timer className="h-4 w-4" />, <TimerPanel />);
+        components.timer = (
+          <Window
+            key="timer"
+            title="Timer"
+            icon={<Timer className="h-4 w-4" />}
+            type="timer"
+            defaultWidth={250}
+            defaultHeight={200}
+            minWidth={200}
+            minHeight={200}
+          >
+            <TimerPanel />
+          </Window>
+        );
         break;
       case 'calendar':
         components.calendar = createWindow('calendar', 'Calendar', <Calendar className="h-4 w-4" />, <CalendarWindow />, 800, 600);

@@ -11,6 +11,7 @@ export interface Track {
   endTime: number;
   title: string;
   artist: string;
+  thumbnail?: string;
 }
 
 interface PlayerState {
@@ -62,7 +63,7 @@ console.log('[Zustand] Initializing store with default values:', {
 export const useYouTubePlayerStore = create<PlayerState>((set, get) => ({
   player: null,
   isReady: false,
-  isPlaying: false,
+  isPlaying: false, // Start with player paused
   volume: 0.7, // Initial volume
   isMuted: false,
   isShuffleEnabled: false,
@@ -90,13 +91,13 @@ export const useYouTubePlayerStore = create<PlayerState>((set, get) => ({
         player, 
         isReady: true,
         // Reset current track if needed
-        currentTrack: get().tracks[get().currentTrackIndex] || null
+        currentTrack: get().tracks[get().currentTrackIndex] || null,
+        // Explicitly set isPlaying to false on init
+        isPlaying: false
       });
       
-      // Start playing the current track if there is one
-      if (get().tracks.length > 0) {
-        get().actions.playTrack(get().currentTrackIndex);
-      }
+      // Don't auto-play on initialization
+      // The user needs to explicitly press play to start playback
     },
     play: () => get().player?.playVideo(),
     pause: () => get().player?.pauseVideo(),
@@ -123,26 +124,22 @@ export const useYouTubePlayerStore = create<PlayerState>((set, get) => ({
         return;
       }
       
+      // Update the current track info in the state first
+      // Keep the current playing state when changing tracks
+      set({ 
+        currentTrack: track, 
+        currentTrackIndex: trackIndex,
+        currentTime: track.startTime || 0
+        // Don't modify isPlaying state here, it will be handled by play()
+      });
+      
       if (!player || !isReady) {
-        console.error('YouTube player is not ready');
-        // Queue the track to be played once player is ready
-        set({ 
-          currentTrack: track, 
-          currentTrackIndex: trackIndex,
-          currentTime: track.startTime || 0,
-          isPlaying: true // Set to play once ready
-        });
+        console.log('YouTube player is not ready, track queued');
+        // The track is already set in state, it will play once the player is ready
         return;
       }
       
       try {
-        // Update track info in state first
-        set({ 
-          currentTrack: track, 
-          currentTrackIndex: trackIndex,
-          currentTime: track.startTime || 0
-        });
-        
         // Check if player is ready and has the getVideoData method
         if (typeof player.getVideoData === 'function') {
           const videoData = player.getVideoData();
@@ -150,21 +147,39 @@ export const useYouTubePlayerStore = create<PlayerState>((set, get) => ({
           // If no video is loaded or different video is loaded
           if (!videoData || !videoData.video_id || videoData.video_id !== track.videoId) {
             console.log('Loading new video:', track.videoId);
+            // Load the new video and set up an event listener for when it's ready
             player.loadVideoById({
               videoId: track.videoId,
               startSeconds: track.startTime
             });
+            
+            // Add an event listener for when the video is ready
+            const onReady = () => {
+              // Update the state again to ensure everything is in sync
+              set({ 
+                currentTrack: track, 
+                currentTrackIndex: trackIndex,
+                currentTime: track.startTime || 0,
+                isPlaying: true
+              });
+              
+              // Seek to the start time and play
+              player.seekTo(track.startTime, true);
+              player.playVideo();
+              
+              // Remove the event listener
+              player.removeEventListener('onReady', onReady);
+            };
+            
+            player.addEventListener('onReady', onReady);
           } else {
             console.log('Seeking to start time:', track.startTime);
+            // If it's the same video, just seek to the start time
             player.seekTo(track.startTime, true);
+            if (isPlaying) {
+              player.playVideo();
+            }
           }
-          
-          // Resume playback if it was playing
-          if (isPlaying && typeof player.playVideo === 'function') {
-            player.playVideo();
-          }
-        } else {
-          console.error('Player does not have getVideoData method');
         }
       } catch (error) {
         console.error('Error in playTrack:', error);

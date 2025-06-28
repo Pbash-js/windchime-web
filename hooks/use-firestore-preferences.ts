@@ -36,6 +36,8 @@ export interface UserPreferences {
     headerAutoHide: boolean
     headerHideDelay: number
     windowBgOpacity: number
+    windowBgBlur: number
+    backgroundBlur: number
     windowBgColor: string
     windowBorderRadius: number
     windowShadow: string
@@ -69,6 +71,8 @@ const defaultPreferences: UserPreferences = {
     headerAutoHide: false,
     headerHideDelay: 2000,
     windowBgOpacity: 0.85,
+    windowBgBlur: 5,
+    backgroundBlur: 0,
     windowBgColor: '24,24,28',
     windowBorderRadius: 8,
     windowShadow: '0 8px 30px rgba(0, 0, 0, 0.3)'
@@ -237,6 +241,8 @@ export function useFirestorePreferences() {
             headerAutoHide: updates.windowStyles?.headerAutoHide ?? prev.windowStyles?.headerAutoHide ?? false,
             headerHideDelay: updates.windowStyles?.headerHideDelay ?? prev.windowStyles?.headerHideDelay ?? 2000,
             windowBgOpacity: updates.windowStyles?.windowBgOpacity ?? prev.windowStyles?.windowBgOpacity ?? 0.85,
+            windowBgBlur: updates.windowStyles?.windowBgBlur ?? prev.windowStyles?.windowBgBlur ?? 5,
+            backgroundBlur: updates.windowStyles?.backgroundBlur ?? prev.windowStyles?.backgroundBlur ?? 0,
             windowBgColor: updates.windowStyles?.windowBgColor ?? prev.windowStyles?.windowBgColor ?? '24,24,28',
             windowBorderRadius: updates.windowStyles?.windowBorderRadius ?? prev.windowStyles?.windowBorderRadius ?? 8,
             windowShadow: updates.windowStyles?.windowShadow ?? prev.windowStyles?.windowShadow ?? '0 8px 30px rgba(0, 0, 0, 0.3)'
@@ -266,6 +272,8 @@ export function useFirestorePreferences() {
             headerAutoHide: updates.windowStyles?.headerAutoHide ?? prev.windowStyles?.headerAutoHide ?? false,
             headerHideDelay: updates.windowStyles?.headerHideDelay ?? prev.windowStyles?.headerHideDelay ?? 2000,
             windowBgOpacity: updates.windowStyles?.windowBgOpacity ?? prev.windowStyles?.windowBgOpacity ?? 0.85,
+            windowBgBlur: updates.windowStyles?.windowBgBlur ?? prev.windowStyles?.windowBgBlur ?? 5,
+            backgroundBlur: updates.windowStyles?.backgroundBlur ?? prev.windowStyles?.backgroundBlur ?? 0,
             windowBgColor: updates.windowStyles?.windowBgColor ?? prev.windowStyles?.windowBgColor ?? '24,24,28',
             windowBorderRadius: updates.windowStyles?.windowBorderRadius ?? prev.windowStyles?.windowBorderRadius ?? 8,
             windowShadow: updates.windowStyles?.windowShadow ?? prev.windowStyles?.windowShadow ?? '0 8px 30px rgba(0, 0, 0, 0.3)'

@@ -9,16 +9,26 @@ import { WindowManager } from "@/components/window-manager"
 import { usePreferences } from "@/contexts/preferences-context"
 import { useAuth } from "@/contexts/auth-context"
 
-const availableBackgrounds = [
-  "/images/bedroom-scene.png",
-  "/images/library-scene.png",
-  "/images/nature-scene.png",
-  "/images/office-scene.png"
-]
+const backgroundMap: Record<string, {path: string, type: 'image' | 'video'}> = {
+  bedroom: { path: "/images/bedroom-scene.webm", type: 'video' },
+  library: { path: "/images/library-scene.png", type: 'image' },
+  nature: { path: "/images/nature-scene.png", type: 'image' },
+  office: { path: "/images/office-scene.png", type: 'image' },
+  'arona-cherry-blossom': { path: "https://static.moewalls.com/videos/preview/2025/arona-cherry-blossom-blue-archive-preview.webm", type: 'video' },
+  'gojo-kitty': { path: "https://static.moewalls.com/videos/preview/2023/gojo-and-kitty-jujutsu-kaisen-preview.webm", type: 'video' },
+  'dragon-slayer': { path: "https://static.moewalls.com/videos/preview/2023/the-dragon-slayer-sword-berserk-preview.webm", type: 'video' },
+  'lofi-house': { path: "https://static.moewalls.com/videos/preview/2024/lofi-house-cloudy-day-1-preview.webm", type: 'video' },
+  'lofi-furries': { path: "https://static.moewalls.com/videos/preview/2023/lofi-furries-night-camping-preview.webm", type: 'video' },
+  'lofi-homework': { path: "https://static.moewalls.com/videos/preview/2022/lofi-girl-doing-homework-preview.webm", type: 'video' },
+  'thousand-years': { path: "https://static.moewalls.com/videos/preview/2024/my-wife-is-from-thousand-years-ago-pixel-preview.webm", type: 'video' },
+  'train-cloudy': { path: "https://static.moewalls.com/videos/preview/2024/train-cloudy-day-preview.webm", type: 'video' },
+  'cat-rain': { path: "https://static.moewalls.com/videos/preview/2023/cat-watching-rain-preview.webm", type: 'video' },
+  'autumn-bedroom': { path: "https://static.moewalls.com/videos/preview/2023/autumn-bedroom-preview.webm", type: 'video' },
+}
 
 export default function HomePage() {
   const [showWelcome, setShowWelcome] = useState(false)
-  const [backgroundImage, setBackgroundImage] = useState(availableBackgrounds[0])
+  const [background, setBackground] = useState(backgroundMap['bedroom'])
   const { isLoading, markAsLoaded } = useLoading()
   const { user } = useAuth()
   const { backgroundScene } = usePreferences()
@@ -45,27 +55,20 @@ export default function HomePage() {
     }
   }, [contentLoaded])
 
-  // Update background image when background scene changes with smooth transition
+  // Update background when background scene changes with smooth transition
   useEffect(() => {
-    const backgroundMap: Record<string, string> = {
-      bedroom: "/images/bedroom-scene.png",
-      library: "/images/library-scene.png",
-      nature: "/images/nature-scene.png",
-      office: "/images/office-scene.png",
-    }
-    
-    const newBackground = backgroundMap[backgroundScene] || availableBackgrounds[0]
+    const newBackground = backgroundMap[backgroundScene] || backgroundMap['bedroom']
     
     // Only update if the background has changed
-    if (newBackground !== backgroundImage) {
+    if (newBackground.path !== background.path) {
       // Start fade out
-      const bgElement = document.getElementById('background-image')
+      const bgElement = document.getElementById('background-container')
       if (bgElement) {
         bgElement.style.opacity = '0'
         
-        // After fade out, update the image and fade in
+        // After fade out, update the background and fade in
         setTimeout(() => {
-          setBackgroundImage(newBackground)
+          setBackground(newBackground)
           // Force reflow
           void bgElement.offsetHeight
           // Fade in
@@ -74,10 +77,10 @@ export default function HomePage() {
         }, 300) // Match this with the CSS transition duration
       } else {
         // Fallback if element not found
-        setBackgroundImage(newBackground)
+        setBackground(newBackground)
       }
     }
-  }, [backgroundScene, backgroundImage])
+  }, [backgroundScene, background])
 
   const handleWelcomeClose = useCallback(() => {
     setShowWelcome(false)
@@ -104,18 +107,32 @@ export default function HomePage() {
               }
             }}
           >
-            {/* Background Image */}
+            {/* Background */}
             <div 
-              id="background-image"
-              className="fixed inset-0 -z-10 bg-cover bg-center transition-opacity duration-300 ease-in-out"
-              style={{ 
-                backgroundImage: `url(${backgroundImage})`,
-                opacity: contentLoaded ? 1 : 0,
-                willChange: 'opacity',
-                backgroundAttachment: 'fixed'
+              id="background-container"
+              className="absolute inset-0 w-full h-full transition-opacity duration-500 ease-in-out overflow-hidden"
+              style={{
+                zIndex: -1,
               }}
             >
-              <div className="absolute inset-0 bg-black/30 backdrop-blur-sm transition-opacity duration-300 ease-in-out" />
+              {background.type === 'video' ? (
+                <video
+                  key={background.path}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  className="w-full h-full object-cover"
+                  src={background.path}
+                />
+              ) : (
+                <div 
+                  className="w-full h-full bg-cover bg-center bg-no-repeat"
+                  style={{
+                    backgroundImage: `url(${background.path})`,
+                  }}
+                />
+              )}
             </div>
 
             {/* Main Content */}

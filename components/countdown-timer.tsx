@@ -1,11 +1,18 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { Button } from "@/components/ui/button"
-import { Play, Pause, RotateCcw, Settings } from "lucide-react"
+import { Play, Pause, RotateCcw, Clock } from "lucide-react"
 import { Input } from "@/components/ui/input"
 
-export function CountdownTimer() {
+interface CountdownTimerProps {
+  scale?: number;
+  isSmall?: boolean;
+  isCompact?: boolean;
+}
+
+export function CountdownTimer({ scale = 1, isSmall = false, isCompact: propIsCompact }: CountdownTimerProps = {}) {
+  const isCompact = propIsCompact ?? isSmall; // Use prop if provided, otherwise fall back to isSmall
   const [timeLeft, setTimeLeft] = useState(300) // 5 minutes default
   const [isRunning, setIsRunning] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -41,7 +48,11 @@ export function CountdownTimer() {
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
     const secs = seconds % 60
-    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+    return {
+      minutes: mins.toString().padStart(2, "0"),
+      seconds: secs.toString().padStart(2, "0"),
+      full: `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+    }
   }
 
   const handleStart = () => {
@@ -59,28 +70,22 @@ export function CountdownTimer() {
     setTimeLeft(initialTimeRef.current)
   }
 
-  const handleEdit = () => {
-    if (isEditing) {
-      // Save the new time
-      const minutes = Math.max(0, Math.min(99, Number.parseInt(inputMinutes) || 0))
-      const seconds = Math.max(0, Math.min(59, Number.parseInt(inputSeconds) || 0))
-      const newTime = minutes * 60 + seconds
+  const handleSetTime = () => {
+    const minutes = Math.max(0, Math.min(99, Number.parseInt(inputMinutes) || 0))
+    const seconds = Math.max(0, Math.min(59, Number.parseInt(inputSeconds) || 0))
+    const newTime = minutes * 60 + seconds
 
-      if (newTime > 0) {
-        setTimeLeft(newTime)
-        initialTimeRef.current = newTime
-        setInputMinutes(minutes.toString())
-        setInputSeconds(seconds.toString())
-      }
-    } else {
-      // Enter edit mode
-      const minutes = Math.floor(timeLeft / 60)
-      const seconds = timeLeft % 60
+    if (newTime > 0) {
+      setTimeLeft(newTime)
+      initialTimeRef.current = newTime
       setInputMinutes(minutes.toString())
       setInputSeconds(seconds.toString())
     }
+    setIsEditing(false)
+  }
 
-    setIsEditing(!isEditing)
+  const handleEdit = () => {
+    handleSetTime()
   }
 
   const getProgress = () => {
@@ -88,129 +93,214 @@ export function CountdownTimer() {
     return ((initialTimeRef.current - timeLeft) / initialTimeRef.current) * 100
   }
 
+  // Calculate consistent dynamic styles based on scale and size
+  const getDynamicStyles = useMemo(() => {
+    // Base sizes for different UI elements
+    const baseTimerSize = 120; // Base size for the timer circle
+    const baseFontSize = 1.25; // Base font size in rem
+    const basePadding = 0.5; // Base padding in rem
+    
+    // Calculate sizes based on scale
+    const timerSize = baseTimerSize * scale;
+    const fontSize = baseFontSize * scale;
+    const padding = basePadding * scale;
+    
+    return {
+      container: {
+        transform: `scale(${scale})`,
+        transformOrigin: 'center',
+        transition: 'transform 0.3s ease-out, font-size 0.3s ease-out',
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column' as const,
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: `${padding}rem`,
+      },
+      timeDisplay: {
+        fontSize: `${fontSize * 1.5}rem`,
+        fontWeight: 300,
+        lineHeight: 1,
+        textAlign: 'center' as const,
+        transition: 'font-size 0.2s ease-out',
+        marginBottom: `${padding * 0.5}rem`,
+      },
+      label: {
+        fontSize: `${fontSize * 0.7}rem`,
+        fontWeight: 500,
+        textTransform: 'uppercase' as const,
+        letterSpacing: '0.05em',
+        marginBottom: `${padding}rem`,
+        color: 'rgba(255, 255, 255, 0.7)',
+      },
+      // Consistent button sizes based on scale
+      buttonSize: Math.round(40 * scale),
+      iconSize: Math.round(20 * scale),
+    };
+  }, [scale]);
+
   return (
-    <div className="h-full w-full flex flex-col items-center justify-center p-4 text-white">
-      <div className="w-full max-w-sm space-y-6">
-        {/* Timer Display or Edit Form */}
+    <div className="h-full w-full flex flex-col items-center justify-center p-1 text-white">
+      <div 
+        className="w-full space-y-1 sm:space-y-2 flex flex-col items-center"
+        style={getDynamicStyles.container}
+      >
         {isEditing ? (
-          <div className="space-y-4">
-            <div className="text-sm text-orange-400 uppercase tracking-wider">Set Timer</div>
-            <div className="flex items-center justify-center gap-2">
-              <div className="flex flex-col items-center gap-1">
-                <Input
-                  type="number"
-                  value={inputMinutes}
-                  onChange={(e) => setInputMinutes(e.target.value)}
-                  className="w-16 text-center bg-gray-800/50 border-gray-700 text-white text-lg"
-                  min="0"
-                  max="99"
-                />
-                <span className="text-xs text-gray-400">min</span>
+          <div className="space-y-2 w-full">
+            <div className="text-center">
+              <div 
+                className="uppercase tracking-wider text-gray-400 mb-1"
+                style={getDynamicStyles.label}
+              >
+                Set Countdown
               </div>
-              <span className="text-2xl text-gray-400 mb-4">:</span>
-              <div className="flex flex-col items-center gap-1">
-                <Input
-                  type="number"
-                  value={inputSeconds}
-                  onChange={(e) => setInputSeconds(e.target.value)}
-                  className="w-16 text-center bg-gray-800/50 border-gray-700 text-white text-lg"
-                  min="0"
-                  max="59"
-                />
-                <span className="text-xs text-gray-400">sec</span>
+              <div className="flex items-center justify-center space-x-2">
+                <div className="flex-1">
+                  <label className="block text-[10px] text-gray-400 mb-0.5">Minutes</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="99"
+                    value={inputMinutes}
+                    onChange={(e) => setInputMinutes(e.target.value)}
+                    className="text-center bg-gray-800/50 border-gray-700 text-white h-7 text-xs"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-[10px] text-gray-400 mb-0.5">Seconds</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="59"
+                    value={inputSeconds}
+                    onChange={(e) => setInputSeconds(e.target.value)}
+                    className="text-center bg-gray-800/50 border-gray-700 text-white h-7 text-xs"
+                  />
+                </div>
               </div>
+            </div>
+            <div className="flex justify-center space-x-2">
+              <Button
+                onClick={handleEdit}
+                className="bg-blue-600 hover:bg-blue-700 text-white flex-1 h-7 text-xs"
+              >
+                Set Time
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setIsEditing(false)}
+                className="flex-1 h-7 text-xs"
+              >
+                Cancel
+              </Button>
             </div>
           </div>
         ) : (
-          <div className="space-y-2">
-            <div className="text-sm text-orange-400 uppercase tracking-wider transition-all duration-300">
-              Countdown Timer
-            </div>
-            <div className="relative group">
-              <div
-                className={`text-5xl font-mono font-light transition-all duration-300 ${
-                  isRunning ? "scale-105" : "scale-100"
-                } ${timeLeft <= 10 && timeLeft > 0 ? "text-red-400 animate-pulse" : ""}`}
+          <>
+            <div className="text-center">
+              <div 
+                className="uppercase tracking-wider text-gray-400 mb-1"
+                style={getDynamicStyles.label}
               >
-                {formatTime(timeLeft)}
+                Countdown
               </div>
-
-              {/* Progress Ring */}
-              <svg
-                className="absolute inset-0 w-full h-full -rotate-90 transition-all duration-300"
-                viewBox="0 0 100 100"
+              <div 
+                className="relative flex items-center justify-center mx-auto mb-2"
+                style={{
+                  width: `${getDynamicStyles.buttonSize * 3.5}px`,
+                  height: `${getDynamicStyles.buttonSize * 3.5}px`,
+                }}
               >
-                <circle cx="50" cy="50" r="45" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="2" />
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="45"
-                  fill="none"
-                  stroke={timeLeft <= 10 && timeLeft > 0 ? "rgba(239,68,68,0.8)" : "rgba(249,115,22,0.8)"}
-                  strokeWidth="2"
-                  strokeDasharray={`${2 * Math.PI * 45}`}
-                  strokeDashoffset={`${2 * Math.PI * 45 * (1 - getProgress() / 100)}`}
-                  className="transition-all duration-1000 ease-linear"
+                {/* Progress Ring */}
+                <svg 
+                  className="absolute inset-0 w-full h-full -rotate-90 transition-all duration-300"
+                  viewBox="0 0 100 100"
                   style={{
-                    filter: isRunning ? "drop-shadow(0 0 8px currentColor)" : "none",
+                    transform: `scale(${Math.min(scale, 1.2)})`,
+                    transformOrigin: 'center',
                   }}
-                />
-              </svg>
-
-              {/* Pulse effect when running */}
-              {isRunning && <div className="absolute inset-0 rounded-full animate-pulse bg-orange-500/5" />}
+                >
+                  <circle 
+                    cx="50" 
+                    cy="50" 
+                    r="45" 
+                    fill="none" 
+                    stroke="rgba(255,255,255,0.1)" 
+                    strokeWidth="5" 
+                    className="transition-all duration-300"
+                  />
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="45"
+                    fill="none"
+                    stroke="#4CAF50"
+                    strokeWidth="5"
+                    strokeLinecap="round"
+                    strokeDasharray={`${2 * Math.PI * 45}`}
+                    strokeDashoffset={`${2 * Math.PI * 45 * (1 - getProgress() / 100)}`}
+                    className="transition-all duration-1000 ease-linear"
+                  />
+                </svg>
+                
+                {/* Time Display */}
+                <div 
+                  className="relative z-10 font-mono font-light text-center"
+                  style={getDynamicStyles.timeDisplay}
+                >
+                  {formatTime(timeLeft).full}
+                </div>
+              </div>
             </div>
-          </div>
+
+            <div className="flex items-center justify-center space-x-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleReset}
+                className="text-gray-400 hover:text-white hover:bg-white/10 rounded-full transition-all duration-200"
+                style={{
+                  width: `${getDynamicStyles.buttonSize}px`,
+                  height: `${getDynamicStyles.buttonSize}px`,
+                  minWidth: `${getDynamicStyles.buttonSize}px`,
+                }}
+              >
+                <RotateCcw className="h-3 w-3" />
+              </Button>
+              
+              <Button
+                onClick={isRunning ? handlePause : handleStart}
+                className="rounded-full bg-gradient-to-br from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 transition-all duration-200"
+                style={{
+                  width: `${getDynamicStyles.buttonSize * 1.25}px`,
+                  height: `${getDynamicStyles.buttonSize * 1.25}px`,
+                  minWidth: `${getDynamicStyles.buttonSize * 1.25}px`,
+                }}
+              >
+                {isRunning ? (
+                  <Pause className="h-3 w-3 fill-current" />
+                ) : (
+                  <Play className="h-3 w-3 ml-0.5 fill-current" />
+                )}
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsEditing(true)}
+                className="text-gray-400 hover:text-white hover:bg-white/10 rounded-full transition-all duration-200"
+                style={{
+                  width: `${getDynamicStyles.buttonSize}px`,
+                  height: `${getDynamicStyles.buttonSize}px`,
+                  minWidth: `${getDynamicStyles.buttonSize}px`,
+                }}
+              >
+                <Clock className="h-3 w-3" />
+              </Button>
+            </div>
+          </>
         )}
-
-        {/* Controls */}
-        <div className="flex items-center justify-center gap-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleReset}
-            className="text-gray-400 hover:text-white hover:bg-white/10 transition-all duration-200 hover:scale-110"
-          >
-            <RotateCcw className="h-5 w-5" />
-          </Button>
-
-          {!isEditing && (
-            <Button
-              size="lg"
-              onClick={isRunning ? handlePause : handleStart}
-              disabled={timeLeft === 0}
-              className="bg-orange-600 hover:bg-orange-700 text-white px-8 transition-all duration-300 hover:scale-105 shadow-lg shadow-orange-500/25 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isRunning ? (
-                <Pause className="h-6 w-6 transition-transform duration-200" />
-              ) : (
-                <Play className="h-6 w-6 transition-transform duration-200" />
-              )}
-            </Button>
-          )}
-
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleEdit}
-            className={`hover:bg-white/10 transition-all duration-200 hover:scale-110 ${
-              isEditing ? "text-orange-400" : "text-gray-400 hover:text-white"
-            }`}
-          >
-            <Settings className="h-5 w-5" />
-          </Button>
-        </div>
-
-        {isEditing && (
-          <Button
-            onClick={handleEdit}
-            className="bg-orange-600 hover:bg-orange-700 text-white transition-all duration-200 hover:scale-105"
-          >
-            Set Timer
-          </Button>
-        )}
-
-        {timeLeft === 0 && !isEditing && <div className="text-lg text-red-400 animate-bounce">Time's up! 🎉</div>}
       </div>
     </div>
   )

@@ -25,6 +25,8 @@ const defaultValues: PreferencesContextType = {
     headerAutoHide: false,
     headerHideDelay: 2000,
     windowBgOpacity: 0.85,
+    windowBgBlur: 5,
+    backgroundBlur: 0,
     windowBgColor: '24,24,28',
     windowBorderRadius: 8,
     windowShadow: '0 8px 30px rgba(0, 0, 0, 0.3)',
