@@ -8,6 +8,7 @@ import { WelcomeModal } from "@/components/welcome-modal"
 import { WindowManager } from "@/components/window-manager"
 import { usePreferences } from "@/contexts/preferences-context"
 import { useAuth } from "@/contexts/auth-context"
+import { useYouTubePlayerStore } from "@/hooks/use-youtube-player"
 
 const backgroundMap: Record<string, {path: string, type: 'image' | 'video'}> = {
   bedroom: { path: "/images/bedroom-scene.webm", type: 'video' },
@@ -33,6 +34,19 @@ export default function HomePage() {
   const { user } = useAuth()
   const { backgroundScene } = usePreferences()
   const [contentLoaded, setContentLoaded] = useState(false)
+  const [hasPlayedRandomTrack, setHasPlayedRandomTrack] = useState(false)
+  const { player, isReady, tracks, currentTrack, actions } = useYouTubePlayerStore()
+
+  // Play a random track when the player is ready and content is loaded
+  useEffect(() => {
+    if (isReady && contentLoaded && !hasPlayedRandomTrack && tracks.length > 0) {
+      const randomIndex = Math.floor(Math.random() * tracks.length)
+      // Set isPlaying to true before playing the track
+      actions.setIsPlaying(true)
+      actions.playTrack(randomIndex)
+      setHasPlayedRandomTrack(true)
+    }
+  }, [isReady, contentLoaded, hasPlayedRandomTrack, tracks, actions])
 
   // Mark content as loaded
   useEffect(() => {

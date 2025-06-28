@@ -15,7 +15,7 @@ import { usePreferences } from "@/contexts/preferences-context"
 import type { UserPreferences } from "@/hooks/use-firestore-preferences"
 
 const backgroundImages = [
-  { id: "bedroom", name: "Cozy Bedroom", path: "/images/bedroom-scene.png", type: "image" },
+  { id: "bedroom", name: "Cozy Bedroom", path: "/images/bedroom-scene.webm", type: "video" },
   { id: "library", name: "Library", path: "/images/library-scene.png", type: "image" },
   { id: "nature", name: "Nature View", path: "/images/nature-scene.png", type: "image" },
   { id: "office", name: "Modern Office", path: "/images/office-scene.png", type: "image" },
@@ -176,7 +176,7 @@ export function SettingsWindow() {
               <CardHeader className="pb-3"><CardTitle className="text-white flex items-center gap-2 text-sm"><Monitor className="h-4 w-4" />Theme</CardTitle></CardHeader>
               <CardContent className="pt-0">
                 <RadioGroup value={theme} onValueChange={(value) => handlePreferenceChange("theme", value as any)}>
-                  <div className="flex items-center space-x-2"><RadioGroupItem value="light" id="light" /><Label htmlFor="light" className="flex items-center gap-2 text-white text-sm"><Sun className="h-3 w-3" />Light</Label></div>
+                  <div className="flex items-center space-x-2"><RadioGroupItem value="light" id="light" /><Label htmlFor="light" className="flex items-center gap-2 text-white text-sm"><Sun className="h-3 w-3" />Light (WIP)</Label></div>
                   <div className="flex items-center space-x-2"><RadioGroupItem value="dark" id="dark" /><Label htmlFor="dark" className="flex items-center gap-2 text-white text-sm"><Moon className="h-3 w-3" />Dark</Label></div>
                   <div className="flex items-center space-x-2"><RadioGroupItem value="system" id="system" /><Label htmlFor="system" className="flex items-center gap-2 text-white text-sm"><Monitor className="h-3 w-3" />System</Label></div>
                 </RadioGroup>

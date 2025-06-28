@@ -176,10 +176,6 @@ export function WelcomeModal({ onClose }: WelcomeModalProps) {
                 </div>
               </div>
 
-              <div className="absolute bottom-6 left-6 text-xs text-gray-600 flex items-center gap-2">
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-                Improving focus for 10,000+ people monthly
-              </div>
             </div>
 
             {/* Right side with authentication */}

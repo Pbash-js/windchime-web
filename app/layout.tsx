@@ -17,7 +17,10 @@ import { PortalContainer } from "@/components/PortalContainer";
 export const metadata: Metadata = {
   title: "Windchime - Focus & Productivity",
   description: "A beautiful productivity app with ambient sounds, pomodoro timer, tasks, and notes",
-    generator: 'v0.dev'
+  generator: 'v0.dev',
+  icons: {
+    icon: '/images/windchimefavicon.ico'
+  }
 }
 
 export default function RootLayout({

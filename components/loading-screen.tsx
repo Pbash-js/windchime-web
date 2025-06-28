@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 
-const BACKGROUND_IMAGE = "/images/nature-scene.png"
 const TEXTS = [
   "Loading your digital sanctuary...",
   "Preparing your workspace...",
@@ -47,15 +46,17 @@ export function LoadingScreen({ isLoading }: { isLoading: boolean }) {
         transition={{ duration: 0.5, ease: "easeInOut" }}
         className="fixed inset-0 z-[9999] flex items-center justify-center"
       >
-        {/* Background with blur */}
-        <div 
-          className="absolute inset-0 bg-cover bg-center"
-          style={{
-            backgroundImage: `url(${BACKGROUND_IMAGE})`,
-            filter: 'blur(8px)',
-            transform: 'scale(1.02)' // Prevent blur edge artifacts
-          }}
-        >
+        {/* Background video */}
+        <div className="absolute inset-0 overflow-hidden">
+          <video
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="absolute inset-0 w-full h-full object-cover"
+          >
+            <source src="/images/bedroom-scene.webm" type="video/webm" />
+          </video>
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
         </div>
 
@@ -98,33 +99,26 @@ export function LoadingScreen({ isLoading }: { isLoading: boolean }) {
 
           {/* Content */}
           <div className="relative z-10 h-full flex flex-col items-center justify-center text-center">
-            {/* Logo/Icon */}
             <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
+              className="w-24 h-24 mb-6 relative"
+              initial={{ scale: 0.8, opacity: 0, rotate: -15 }}
               animate={{ 
-                scale: [1, 1.05, 1],
-                opacity: 1,
-                rotate: [0, 5, -5, 0]
+                scale: 1, 
+                opacity: 1, 
+                rotate: 0,
+                transition: { 
+                  type: 'spring',
+                  damping: 10,
+                  stiffness: 100
+                }
               }}
-              transition={{
-                scale: { duration: 4, repeat: Infinity, ease: "easeInOut" },
-                rotate: { duration: 8, repeat: Infinity, ease: "easeInOut" }
-              }}
-              className="w-24 h-24 mb-6"
             >
-              <div className="w-full h-full bg-white/10 rounded-2xl flex items-center justify-center">
-                <svg 
-                  className="w-12 h-12 text-white" 
-                  viewBox="0 0 24 24" 
-                  fill="none" 
-                  stroke="currentColor" 
-                  strokeWidth="1.5" 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round"
-                >
-                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                </svg>
+              <div className="w-full h-full rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
+                <img 
+                  src="/images/windchimefavicon.ico" 
+                  alt="Windchime Logo" 
+                  className="w-12 h-12"
+                />
               </div>
             </motion.div>
 

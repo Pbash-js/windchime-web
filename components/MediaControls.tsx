@@ -9,11 +9,13 @@ import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import {
   Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Shuffle, FileText, Timer,
-  LayoutGrid, Heart, List, Music, Settings, Maximize2, Minimize2
+  LayoutGrid, Heart, List, Music, Settings, Maximize2, Minimize2,
+  ListTodo
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { UserAuth } from "@/components/auth/user-auth"
+import { TimerPanel } from "./timer-panel"
 
 interface Track {
   id: string;
@@ -34,16 +36,17 @@ interface MediaControlsProps {
 export default function MediaControls({ isFavorite: initialIsFavorite = false, isReady: initialIsReady = true }: MediaControlsProps) {
   const [localTime, setLocalTime] = useState<Date>(new Date());
   const [isHovered, setIsHovered] = useState(false);
-  const [showVolume, setShowVolume] = useState(false);
   const [volume, setVolume] = useState(0.5);
   const [isMuted, setIsMuted] = useState(false);
   const [isShuffleOn, setIsShuffleOn] = useState(false);
   const controlsRef = useRef<HTMLDivElement>(null);
-  const volumeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { currentTrack, isPlaying, isReady: playerReady } = useYouTubePlayerStore();
   const actions = usePlayerActions();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const { windowStyles } = usePreferences();
+  const [showVolumeSlider, setShowVolumeSlider] = useState(false);
+  const volumeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const volumeRef = useRef<HTMLDivElement>(null);
 
   // Format time as HH:MM AM/PM
   const formatTime = (date: Date): string => date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
@@ -57,8 +60,6 @@ export default function MediaControls({ isFavorite: initialIsFavorite = false, i
   // Local state with props as initial values
   const [isReady] = useState(initialIsReady);
   const [isFavorite, setIsFavorite] = useState(initialIsFavorite);
-  const [localVolume, setLocalVolume] = useState(volume);
-  const [showVolumeSlider, setShowVolumeSlider] = useState(false);
   
   // Dynamic styles from preferences
   const controlsStyle = useMemo(() => {
@@ -76,47 +77,19 @@ export default function MediaControls({ isFavorite: initialIsFavorite = false, i
     };
   }, [windowStyles]);
 
-  useEffect(() => {
-    if (!isMuted) setLocalVolume(volume);
-  }, [volume, isMuted]);
-  
+  // Optimized volume toggle handler
   const handleVolumeToggle = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    setIsMuted(prev => !prev);
+    const newMutedState = !isMuted;
+    setIsMuted(newMutedState);
     actions.toggleMute();
-    if (!isMuted) setLocalVolume(0);
-    else if (localVolume === 0) setLocalVolume(volume > 0 ? volume : 0.5);
-  }, [actions, isMuted, volume, localVolume]);
+  }, [actions, isMuted]);
 
   useEffect(() => {
     const timer = setInterval(() => setLocalTime(new Date()), 60000);
     return () => clearInterval(timer);
   }, []);
 
-  const buttonVariants = { initial: { scale: 1 }, tap: { scale: 0.95 }, hover: { scale: 1.1, transition: { type: 'spring' as const, stiffness: 400, damping: 10 } } };
-
-  const handleVolumeChange = (value: number[]) => {
-    const newVolume = value[0] / 100;
-    setLocalVolume(newVolume);
-    setVolume(newVolume);
-    actions.setVolume(newVolume);
-    if (newVolume > 0 && isMuted) {
-      setIsMuted(false);
-      actions.toggleMute();
-    }
-  };
-
-  const handlePlayPause = useCallback(async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!playerReady) return;
-    try { isPlaying ? await actions.pause() : await actions.play(); } catch (error) { console.error('Error toggling play/pause:', error); }
-  }, [actions, isPlaying, playerReady]);
-
-  const handleShuffleToggle = useCallback(() => {
-    setIsShuffleOn(prev => !prev);
-    actions.toggleShuffle();
-  }, [actions]);
-  
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().then(() => setIsFullscreen(true));
@@ -124,6 +97,66 @@ export default function MediaControls({ isFavorite: initialIsFavorite = false, i
       document.exitFullscreen().then(() => setIsFullscreen(false));
     }
   }, []);
+
+  // Keyboard event listener for "F" key to toggle fullscreen
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === 'f' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        // Only trigger if not typing in an input field
+        const target = e.target as HTMLElement;
+        if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA' && !target.isContentEditable) {
+          e.preventDefault();
+          toggleFullscreen();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyPress);
+    return () => document.removeEventListener('keydown', handleKeyPress);
+  }, [toggleFullscreen]);
+
+  const buttonVariants = { 
+    initial: { scale: 1 }, 
+    tap: { scale: 0.95 }, 
+    hover: { scale: 1.1, transition: { type: 'spring' as const, stiffness: 400, damping: 10 } } 
+  };
+
+  // Optimized volume change handler - immediate UI update, debounced API call
+  const handleVolumeChange = useCallback((newVolume: number) => {
+    // Immediate UI update for smooth interaction
+    setVolume(newVolume);
+    
+    // Clear existing timeout
+    if (volumeTimeoutRef.current) {
+      clearTimeout(volumeTimeoutRef.current);
+    }
+    
+    // Debounce the actual API call
+    volumeTimeoutRef.current = setTimeout(() => {
+      actions.setVolume(newVolume);
+      if (newVolume > 0 && isMuted) {
+        setIsMuted(false);
+        actions.toggleMute();
+      }
+    }, 16); // Reduced to ~60fps for smoother updates
+  }, [actions, isMuted]);
+
+  const handlePlayPause = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!playerReady) return;
+    try { 
+      isPlaying ? await actions.pause() : await actions.play(); 
+    } catch (error) { 
+      console.error('Error toggling play/pause:', error); 
+    }
+  }, [actions, isPlaying, playerReady]);
+
+  const handleShuffleToggle = useCallback(() => {
+    setIsShuffleOn(prev => !prev);
+    actions.toggleShuffle();
+  }, [actions]);
+  
+
   
   useEffect(() => {
     const handleFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
@@ -133,7 +166,10 @@ export default function MediaControls({ isFavorite: initialIsFavorite = false, i
 
   const toggleFavorite = useCallback(() => setIsFavorite(prev => !prev), []);
   const handleOpenPlaylist = useCallback(() => toggleWindow("playlist"), [toggleWindow]);
-  const handleOpenSettings = useCallback((e: React.MouseEvent) => { e.stopPropagation(); toggleWindow("settings"); }, [toggleWindow]);
+  const handleOpenSettings = useCallback((e: React.MouseEvent) => { 
+    e.stopPropagation(); 
+    toggleWindow("settings"); 
+  }, [toggleWindow]);
 
   const formatTimeDisplay = (seconds: number) => {
     if (isNaN(seconds)) return '0:00';
@@ -141,6 +177,41 @@ export default function MediaControls({ isFavorite: initialIsFavorite = false, i
     const remainingSeconds = Math.floor(seconds % 60);
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
+
+  // Handle volume slider mouse interactions
+  const handleVolumeSliderMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const slider = e.currentTarget.parentElement!;
+    const rect = slider.getBoundingClientRect();
+    
+    const handleMouseMove = (me: MouseEvent) => {
+      const newVolume = Math.max(0, Math.min(1, 1 - ((me.clientY - rect.top) / rect.height)));
+      handleVolumeChange(newVolume);
+    };
+    
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [handleVolumeChange]);
+
+  // Handle volume slider hover with debouncing
+  const handleVolumeHover = useCallback((show: boolean) => {
+    if (volumeTimeoutRef.current) {
+      clearTimeout(volumeTimeoutRef.current);
+    }
+    
+    if (show) {
+      setShowVolumeSlider(true);
+    } else {
+      volumeTimeoutRef.current = setTimeout(() => {
+        setShowVolumeSlider(false);
+      }, 150);
+    }
+  }, []);
 
   return (
     <div className="fixed bottom-6 left-0 right-0 z-50 flex justify-center px-4">
@@ -157,9 +228,9 @@ export default function MediaControls({ isFavorite: initialIsFavorite = false, i
             drag dragConstraints={{ top: 0, left: 0, right: 0, bottom: 0 }} dragElastic={0.1}
             onHoverStart={() => setIsHovered(true)} onHoverEnd={() => setIsHovered(false)}
           >
-            <div className="flex justify-between items-center gap-2 w-full p-2 px-4 max-w-4xl">
+            <div className="flex justify-between items-center gap-2 w-full p-2 max-w-4xl">
               {/* Left section - Track info with artwork */}
-              <div className="flex flex-1 items-center min-w-0 bg-white/5 backdrop-blur-sm rounded-lg p-2 transition-all duration-200 hover:bg-white/10">
+              <div className="flex flex-1 items-center min-w-0 bg-white/5 backdrop-blur-sm rounded-lg pr-2 transition-all duration-200 hover:bg-white/10">
                 {currentTrack?.thumbnail ? (
                   <div className="w-10 h-10 rounded-lg overflow-hidden mr-3 flex-shrink-0 shadow-md">
                     <img src={currentTrack.thumbnail} alt={currentTrack.title} className="w-full h-full object-cover" />
@@ -178,7 +249,7 @@ export default function MediaControls({ isFavorite: initialIsFavorite = false, i
                   )}
                 </div>
                 {isPlaying && (
-                  <div className="ml-2 ml-auto flex space-x-1">
+                  <div className="ml-2 ml-auto flex space-x-1 transform rotate-180">
                     {[0, 0.5, 1].map((delay) => (
                       <motion.div
                         key={delay}
@@ -195,10 +266,10 @@ export default function MediaControls({ isFavorite: initialIsFavorite = false, i
               {/* Center section - Playback controls */}
               <div className="flex flex-1 items-center justify-left mx-4 space-x-2">
                 <motion.div variants={buttonVariants} whileHover="hover" whileTap="tap" className="relative">
-                  <Button variant="ghost" size="icon" disabled={!playerReady} className={`text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 ease-in-out h-8 w-8 disabled:opacity-50 ${isShuffleOn ? 'text-blue-400 bg-white/10' : ''}`} onClick={handleShuffleToggle}>
+                  <Button variant="ghost" size="icon" disabled={!playerReady} className={`text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 ease-in-out h-8 w-8 disabled:opacity-50`} onClick={handleShuffleToggle}>
                     <Shuffle className="h-4 w-4" />
                   </Button>
-                  {isShuffleOn && (<div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-400 rounded-full animate-pulse" />)}
+                  {isShuffleOn && (<div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-4 h-0.5 bg-white rounded-full" />)}
                 </motion.div>
 
                 <motion.div variants={buttonVariants} whileHover="hover" whileTap="tap">
@@ -207,8 +278,16 @@ export default function MediaControls({ isFavorite: initialIsFavorite = false, i
                   </Button>
                 </motion.div>
 
+                {/* Play/Pause button - made consistent with other buttons */}
                 <motion.div variants={buttonVariants} whileHover="hover" whileTap="tap">
-                  <Button variant="ghost" size="icon" disabled={!playerReady} className={`bg-white/20 hover:bg-white/30 rounded-full h-10 w-10 flex items-center justify-center backdrop-blur-sm transition-all duration-200 active:scale-95 ${!playerReady ? 'opacity-50' : ''}`} onClick={handlePlayPause} aria-label={isPlaying ? 'Pause' : 'Play'}>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    disabled={!playerReady} 
+                    className={`text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 ease-in-out h-10 w-10 disabled:opacity-50`} 
+                    onClick={handlePlayPause} 
+                    aria-label={isPlaying ? 'Pause' : 'Play'}
+                  >
                     {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5 ml-0.5" />}
                   </Button>
                 </motion.div>
@@ -219,47 +298,58 @@ export default function MediaControls({ isFavorite: initialIsFavorite = false, i
                   </Button>
                 </motion.div>
 
-                {/* Volume Control Section */}
+                {/* Volume Control Section - Fixed positioning and optimized */}
                 <div className="flex items-center ml-2">
-                  <motion.div className="relative" onMouseEnter={() => setShowVolumeSlider(true)} onMouseLeave={() => setShowVolumeSlider(false)}>
+                  <motion.div 
+                    className="relative" 
+                    onMouseEnter={() => handleVolumeHover(true)} 
+                    onMouseLeave={() => handleVolumeHover(false)}
+                  >
                     <motion.div variants={buttonVariants} whileHover="hover" whileTap="tap">
-                      <Button variant="ghost" size="icon" className="text-white hover:bg-white/10 rounded-full h-8 w-8 md:h-9 md:w-9 relative group" onClick={handleVolumeToggle}>
-                        {isMuted ? <VolumeX className="h-4 w-4" /> : localVolume > 0.5 ? <Volume2 className="h-4 w-4" /> : localVolume > 0 ? <Volume2 className="h-4 w-4" style={{ transform: 'scale(0.8)' }} /> : <VolumeX className="h-4 w-4" />}
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="text-white hover:bg-white/10 rounded-full h-8 w-8 md:h-9 md:w-9 relative group" 
+                        onClick={handleVolumeToggle}
+                      >
+                        {isMuted || volume === 0 ? (
+                          <VolumeX className="h-4 w-4" />
+                        ) : (
+                          <Volume2 className="h-4 w-4" />
+                        )}
                         <div className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-blue-400 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"></div>
                       </Button>
                     </motion.div>
 
+                    {/* Volume Slider - Positioned directly above the button */}
                     <AnimatePresence>
                       {showVolumeSlider && (
                         <motion.div
-                          className="absolute bottom-12 left-1/2 transform -translate-x-1/2 bg-black/90 backdrop-blur-md p-3 rounded-lg shadow-lg border border-white/10"
+                          className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 bg-black/90 backdrop-blur-md p-3 rounded-lg shadow-lg border border-white/10"
                           initial={{ opacity: 0, y: 10, scale: 0.95 }}
                           animate={{ opacity: 1, y: 0, scale: 1 }}
                           exit={{ opacity: 0, y: 10, scale: 0.95 }}
                           transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                          onMouseEnter={() => setShowVolumeSlider(true)}
-                          onMouseLeave={() => setShowVolumeSlider(false)}
+                          onMouseEnter={() => handleVolumeHover(true)}
+                          onMouseLeave={() => handleVolumeHover(false)}
                         >
                           <div className="flex flex-col items-center">
-                            <div className="text-[10px] text-white/60 mb-2">{Math.round((isMuted ? 0 : localVolume) * 100)}%</div>
+                            <div className="text-[10px] text-white/60 mb-2">
+                              {Math.round((isMuted ? 0 : volume) * 100)}%
+                            </div>
                             <div className="h-24 w-6 flex items-center justify-center">
-                              <div className="h-full w-1 bg-white/20 rounded-full relative">
-                                <div className="absolute bottom-0 w-full bg-gradient-to-t from-blue-500 to-blue-300 rounded-full transition-all duration-150" style={{ height: `${(isMuted ? 0 : localVolume) * 100}%` }} />
-                                <div className="absolute w-3 h-3 bg-white border-2 border-white/80 rounded-full shadow-lg cursor-pointer transform -translate-x-1/2 -translate-y-1/2 transition-all duration-150 hover:scale-110" style={{ left: '50%', bottom: `${(isMuted ? 0 : localVolume) * 100}%` }}
-                                  onMouseDown={(e) => {
-                                    e.preventDefault();
-                                    const rect = e.currentTarget.parentElement!.getBoundingClientRect();
-                                    const handleMouseMove = (me: MouseEvent) => {
-                                      const newVolume = Math.max(0, Math.min(1, 1 - ((me.clientY - rect.top) / rect.height)));
-                                      handleVolumeChange([newVolume * 100]);
-                                    };
-                                    const handleMouseUp = () => {
-                                      document.removeEventListener('mousemove', handleMouseMove);
-                                      document.removeEventListener('mouseup', handleMouseUp);
-                                    };
-                                    document.addEventListener('mousemove', handleMouseMove);
-                                    document.addEventListener('mouseup', handleMouseUp);
+                              <div className="h-full w-1 bg-white/20 rounded-full relative cursor-pointer">
+                                <div 
+                                  className="absolute bottom-0 w-full bg-gradient-to-t from-blue-500 to-blue-300 rounded-full transition-all duration-150" 
+                                  style={{ height: `${(isMuted ? 0 : volume) * 100}%` }} 
+                                />
+                                <div 
+                                  className="absolute w-3 h-3 bg-white border-2 border-white/80 rounded-full shadow-lg cursor-pointer transform -translate-x-1/2 -translate-y-1/2 transition-all duration-150 hover:scale-110" 
+                                  style={{ 
+                                    left: '50%', 
+                                    bottom: `${(isMuted ? 0 : volume) * 100}%` 
                                   }}
+                                  onMouseDown={handleVolumeSliderMouseDown}
                                 />
                               </div>
                             </div>
@@ -268,70 +358,108 @@ export default function MediaControls({ isFavorite: initialIsFavorite = false, i
                       )}
                     </AnimatePresence>
                   </motion.div>
-                  
-                  {/* App Windows Buttons */}
+                  <div className="h-6 w-px bg-white/10 mx-1" />
                   <div className="flex items-center gap-2">
                     <Tooltip>
-                      <TooltipTrigger asChild><motion.div variants={buttonVariants} whileHover="hover" whileTap="tap" className="relative">
-                        <Button variant="ghost" size="icon" className="text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 ease-in-out h-8 w-8" onClick={() => toggleWindow("notes")}>
-                          <FileText className="h-4 w-4" />
-                        </Button>
-                        {windows.notes?.isOpen && (<div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-4 h-0.5 bg-white rounded-full" />)}
-                      </motion.div></TooltipTrigger><TooltipContent side="top">Notes</TooltipContent>
+                      <TooltipTrigger asChild>
+                        <motion.div variants={buttonVariants} whileHover="hover" whileTap="tap" className="relative">
+                          <Button variant="ghost" size="icon" onClick={handleOpenPlaylist} className="text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 ease-in-out h-8 w-8">
+                            <Music className="h-4 w-4" />
+                          </Button>
+                          {windows.playlist?.isOpen && (<div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-4 h-0.5 bg-white rounded-full" />)}
+                        </motion.div>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">Playlist</TooltipContent>
                     </Tooltip>
                     <Tooltip>
-                      <TooltipTrigger asChild><motion.div variants={buttonVariants} whileHover="hover" whileTap="tap" className="relative">
-                        <Button variant="ghost" size="icon" onClick={handleOpenPlaylist} className="text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 ease-in-out h-8 w-8">
-                          <List className="h-4 w-4" />
-                        </Button>
-                        {windows.playlist?.isOpen && (<div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-4 h-0.5 bg-white rounded-full" />)}
-                      </motion.div></TooltipTrigger><TooltipContent side="top">Playlist</TooltipContent>
+                      <TooltipTrigger asChild>
+                        <motion.div variants={buttonVariants} whileHover="hover" whileTap="tap" className="relative">
+                          <Button variant="ghost" size="icon" className="text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 ease-in-out h-8 w-8" onClick={() => toggleWindow("notes")}>
+                            <FileText className="h-4 w-4" />
+                          </Button>
+                          {windows.notes?.isOpen && (<div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-4 h-0.5 bg-white rounded-full" />)}
+                        </motion.div>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">Notes</TooltipContent>
                     </Tooltip>
                     <Tooltip>
-                      <TooltipTrigger asChild><motion.div variants={buttonVariants} whileHover="hover" whileTap="tap" className="relative">
-                        <Button variant="ghost" size="icon" onClick={toggleFavorite} disabled={!playerReady} className={`text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 ease-in-out h-8 w-8 disabled:opacity-50 ${isFavorite ? "text-red-400" : ""}`}>
-                          <Heart className={`h-4 w-4 ${isFavorite ? "fill-current" : ""}`} />
-                        </Button>
-                      </motion.div></TooltipTrigger><TooltipContent side="top">{isFavorite ? "Remove from favorites" : "Add to favorites"}</TooltipContent>
+                      <TooltipTrigger asChild>
+                        <motion.div variants={buttonVariants} whileHover="hover" whileTap="tap" className="relative">
+                          <Button variant="ghost" size="icon" className="text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 ease-in-out h-8 w-8" onClick={() => toggleWindow("tasks")}>
+                            <ListTodo className="h-4 w-4" />
+                          </Button>
+                          {windows.tasks?.isOpen && (<div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-4 h-0.5 bg-white rounded-full" />)}
+                        </motion.div>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">Tasks</TooltipContent>
                     </Tooltip>
                     <Tooltip>
-                      <TooltipTrigger asChild><motion.div variants={buttonVariants} whileHover="hover" whileTap="tap" className="relative">
-                        <Button variant="ghost" size="icon" onClick={handleOpenSettings} className="text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 ease-in-out h-8 w-8">
-                          <Settings className="h-4 w-4" />
-                        </Button>
-                        {windows.settings?.isOpen && (<div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-4 h-0.5 bg-white rounded-full" />)}
-                      </motion.div></TooltipTrigger><TooltipContent side="top"><p>Settings</p></TooltipContent>
+                      <TooltipTrigger asChild>
+                        <motion.div variants={buttonVariants} whileHover="hover" whileTap="tap" className="relative">
+                          <Button variant="ghost" size="icon" onClick={() => toggleWindow("timer")} className="text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 ease-in-out h-8 w-8">
+                            <Timer className="h-4 w-4" />
+                          </Button>
+                          {windows.timer?.isOpen && (<div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-4 h-0.5 bg-white rounded-full" />)}
+                        </motion.div>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">Timer</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <motion.div variants={buttonVariants} whileHover="hover" whileTap="tap" className="relative">
+                          <Button variant="ghost" size="icon" onClick={toggleFavorite} disabled={!playerReady} className={`text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 ease-in-out h-8 w-8 disabled:opacity-50 ${isFavorite ? "text-red-400" : ""}`}>
+                            <Heart className={`h-4 w-4 ${isFavorite ? "fill-current" : ""}`} />
+                          </Button>
+                        </motion.div>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">{isFavorite ? "Remove from favorites" : "Add to favorites"}</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <motion.div variants={buttonVariants} whileHover="hover" whileTap="tap" className="relative">
+                          <Button variant="ghost" size="icon" onClick={handleOpenSettings} className="text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 ease-in-out h-8 w-8">
+                            <Settings className="h-4 w-4" />
+                          </Button>
+                          {windows.settings?.isOpen && (<div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-4 h-0.5 bg-white rounded-full" />)}
+                        </motion.div>
+                      </TooltipTrigger>
+                      <TooltipContent side="top"><p>Settings</p></TooltipContent>
                     </Tooltip>
                   </div>
                 </div>
                 <div className="h-6 w-px bg-white/10" />
-            </div>
-            
-                {/* User Section */}
-                <div className="hidden md:flex items-center space-x-3 mx-2">
-                  <UserAuth />
-                  <div className="h-6 w-px bg-white/10" />
-                </div>
-                
-                {/* Time and Date - Right Section */}
-                <div className="hidden md:flex items-center space-x-3 mx-2">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <motion.div variants={buttonVariants} whileHover="hover" whileTap="tap">
-                        <Button variant="ghost" size="icon" onClick={toggleFullscreen} className="text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 ease-in-out h-8 w-8">
-                          {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-                        </Button>
-                      </motion.div>
-                    </TooltipTrigger>
-                    <TooltipContent side="top">{isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}</TooltipContent>
-                  </Tooltip>
-                  <div className="h-6 w-px bg-white/10" />
-                  <div className="flex flex-col items-end">
-                    <div className="text-sm font-medium text-white/90 whitespace-nowrap">{formatTime(localTime)}</div>
-                    <div className="text-[10px] text-white/60 whitespace-nowrap">{formatDate(localTime)}</div>
-                  </div>
+              </div>
+              
+              {/* User Section */}
+              <div className="hidden md:flex items-center space-x-3 mx-2">
+                <UserAuth />
+                <div className="h-6 w-px bg-white/10" />
+              </div>
+              
+              {/* Time and Date - Right Section */}
+              <div className="flex items-center space-x-3">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-white/80 hover:text-white hover:bg-white/10"
+                      onClick={toggleFullscreen}
+                    >
+                      {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    <p>{isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}</p>
+                  </TooltipContent>
+                </Tooltip>
+                <div className="h-6 w-px bg-white/10" />
+                <div className="flex flex-col items-end">
+                  <div className="text-sm font-medium text-white/90 whitespace-nowrap">{formatTime(localTime)}</div>
+                  <div className="text-[10px] text-white/60 whitespace-nowrap">{formatDate(localTime)}</div>
                 </div>
               </div>
+            </div>
           </motion.div>
         </div>
       </div>

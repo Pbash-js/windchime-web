@@ -4,8 +4,65 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@700&display=swap');
 
+:root {
+  --scrollbar-track: rgba(0, 0, 0, 0.1);
+  --scrollbar-thumb: rgba(94, 94, 94, 0.631);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.036);
+  --scrollbar-width: 8px;
+  --scrollbar-border-radius: 4px;
+}
+
+/* Light mode scrollbar */
+:root, .light, .light-theme {
+  --scrollbar-track: rgba(30, 30, 40, 0.1);
+  --scrollbar-thumb: rgba(0, 0, 0, 0.2);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.3);
+}
+
+/* Dark mode scrollbar */
+.dark, .dark-theme {
+  --scrollbar-track: rgba(30, 30, 40, 0.3);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.367);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.4);
+}
+
+/* Custom scrollbar for WebKit browsers (Chrome, Safari, Edge) */
+::-webkit-scrollbar {
+  width: var(--scrollbar-width);
+  height: var(--scrollbar-width);
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+  border-radius: var(--scrollbar-border-radius);
+  margin: 4px 0;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: var(--scrollbar-border-radius);
+  transition: background 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* Custom scrollbar for Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   font-family: Arial, Helvetica, sans-serif;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
 .handwriting {
